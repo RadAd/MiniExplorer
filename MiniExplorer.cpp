@@ -20,7 +20,30 @@
 
 int s_id = 0;
 
-HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect);
+HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, std::wstring name, HICON hIcon, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect);
+
+HRESULT BrowseFolder(int id, const ITEMIDLIST_ABSOLUTE* pidl, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
+{
+    CComPtr<IShellFolder> pShellFolder;
+    ATLVERIFY(SUCCEEDED(SHGetDesktopFolder(&pShellFolder)));
+
+    CComPtr<IShellFolder> pFolder;
+    ATLVERIFY(SUCCEEDED(pShellFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
+
+#if 0
+    CComHeapPtr<wchar_t> folder_name;
+    ATLVERIFY(SUCCEEDED(SHGetNameFromIDList(pidl, SIGDN_NORMALDISPLAY, &folder_name)));
+
+    // TODO Get hIcon
+
+    return BrowseFolder(s_id++, pFolder, static_cast<wchar_t*>(folder_name), NULL, ViewMode, nShowCmd, pRect);
+#else
+    SHFILEINFO sfi = {};
+    SHGetFileInfo(reinterpret_cast<LPCTSTR>(pidl), 0, &sfi, sizeof(sfi), SHGFI_PIDL | SHGFI_DISPLAYNAME | SHGFI_ICON);
+
+    return BrowseFolder(s_id++, pFolder, sfi.szDisplayName, sfi.hIcon, ViewMode, nShowCmd, pRect);
+#endif
+}
 
 class Counter
 {
@@ -145,27 +168,32 @@ public:
     STDMETHOD(BrowseObject)(
         _In_opt_ PCUIDLIST_RELATIVE pidl, UINT wFlags) override
     {
-        if (pidl != nullptr)
+        if (false)
         {
-            CComPtr<IShellFolder> pFolder;
-
-            if ((wFlags & 0xF000) == SBSP_ABSOLUTE)
+            if (pidl != nullptr)
             {
-                CComPtr<IShellFolder> pShellFolder;
-                ATLVERIFY(SUCCEEDED(SHGetDesktopFolder(&pShellFolder)));
+                // TODO Get parent ViewMode
 
-                ATLVERIFY(SUCCEEDED(pShellFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
-            }
-            else if ((wFlags & 0xF000) == SBSP_RELATIVE)
-            {
-                ATLVERIFY(SUCCEEDED(m_pFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
+
+                if ((wFlags & 0xF000) == SBSP_ABSOLUTE)
+                {
+                    ATLVERIFY(SUCCEEDED(BrowseFolder(s_id++, pidl, FVM_AUTO, SW_SHOW, nullptr)));
+                }
+                else if ((wFlags & 0xF000) == SBSP_RELATIVE)
+                {
+                    CComPtr<IShellFolder> pFolder;
+                    // TODO get name and hIcon
+                    std::wstring name;
+                    HICON hIcon = NULL;
+                    ATLVERIFY(SUCCEEDED(m_pFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
+                    ATLVERIFY(SUCCEEDED(BrowseFolder(s_id++, pFolder, name, hIcon, FVM_AUTO, SW_SHOW, nullptr)));
+                }
             }
 
-            if (pFolder != nullptr)
-                ATLVERIFY(SUCCEEDED(BrowseFolder(s_id++, pFolder, FVM_AUTO, SW_SHOW, nullptr)));
+            return S_OK;
         }
-
-        return S_OK;
+        else
+            return E_NOTIMPL;
     }
 
     STDMETHOD(GetViewStateStream)(
@@ -229,10 +257,10 @@ private:
     CComPtr<IShellFolder> m_pFolder;
 };
 
-// SHGetIDListFromObject
+typedef CWinTraits<WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES>		CMiniExplorerTraits;
 
-class CMainWnd :
-    public CWindowImpl<CMainWnd, CWindow, CFrameWinTraits>
+class CMiniExplorerWnd :
+    public CWindowImpl<CMiniExplorerWnd, CWindow, CMiniExplorerTraits>
 {
 public:
     static LPCTSTR GetWndCaption()
@@ -240,12 +268,12 @@ public:
         return _T("Mini Explorer");
     }
 
-    CMainWnd(int id, CComPtr<IShellFolder> pShellFolder, FOLDERVIEWMODE ViewMode)
+    CMiniExplorerWnd(int id, CComPtr<IShellFolder> pShellFolder, FOLDERVIEWMODE ViewMode)
         : m_id(id), m_pShellFolder(pShellFolder), m_ViewMode(ViewMode)
     {
     }
 
-    BEGIN_MSG_MAP(CMainWnd)
+    BEGIN_MSG_MAP(CMiniExplorerWnd)
         MSG_WM_CREATE(OnCreate)
         MSG_WM_DESTROY(OnDestroy)
         MSG_WM_SIZE(OnSize)
@@ -320,10 +348,17 @@ private:
             ListView_SetBkColor(hListView, RGB(0, 0, 0));
             ListView_SetTextColor(hListView, RGB(255, 255, 255));
             ListView_SetTextBkColor(hListView, RGB(0, 0, 0));
-            ListView_SetOutlineColor(hListView, RGB(255, 0, 0));
+            ListView_SetOutlineColor(hListView, RGB(255, 0, 0));    // TODO Not sure what this is?
 
             //ListView_SetView(hListView, LV_VIEW_SMALLICON);
         }
+
+#if 0
+        HRESULT hr;
+        CComPtr<IDropTarget> m_pDropTarget;
+        ATLVERIFY(SUCCEEDED(m_pShellView->QueryInterface(IID_PPV_ARGS(&m_pDropTarget))));
+        ATLVERIFY(SUCCEEDED(hr = RegisterDragDrop(m_hWnd, m_pDropTarget)));
+#endif
 
         return 0;
     }
@@ -371,6 +406,9 @@ private:
             ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("view"), viewmode));
         }
 
+#if 0
+        ATLVERIFY(SUCCEEDED(RevokeDragDrop(m_hWnd)));
+#endif
         ATLVERIFY(SUCCEEDED(m_pShellView->UIActivate(SVUIA_DEACTIVATE)));
         ATLVERIFY(SUCCEEDED(m_pShellView->DestroyViewWindow()));
 #endif
@@ -414,11 +452,13 @@ private:
     Counter m_counter;
 };
 
-HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
+HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring name, HICON hIcon, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
 {
-    CMainWnd* mainwnd = new CMainWnd(id, pShellFolder, ViewMode);
+    CMiniExplorerWnd* mainwnd = new CMiniExplorerWnd(id, pShellFolder, ViewMode);
     if (!mainwnd->Create(NULL, pRect))
         return AtlHresultFromWin32(GetLastError());
+    mainwnd->SetWindowText((name + L" - " + CMiniExplorerWnd::GetWndCaption()).c_str());
+    mainwnd->SetIcon(hIcon);
     mainwnd->ShowWindow(nShowCmd);
     return S_OK;
 }
@@ -469,12 +509,7 @@ public:
                 spidl.AllocateBytes(bytes);
                 childreg.QueryBinaryValue(_T("pidl"), spidl, &bytes);
 
-                CComHeapPtr<wchar_t> folder_name;
-                ATLVERIFY(SUCCEEDED(SHGetNameFromIDList(spidl, SIGDN_NORMALDISPLAY, &folder_name)));
-
-                CComPtr<IShellFolder> pFolder;
-                ATLVERIFY(SUCCEEDED(pShellFolder->BindToObject(spidl, 0, IID_PPV_ARGS(&pFolder))));
-                ATLVERIFY(SUCCEEDED(BrowseFolder(id, pFolder, ViewMode, nShowCmd, &rc)));
+                ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, ViewMode, nShowCmd, &rc)));
 
                 if (s_id <= id)
                     s_id = id + 1;
@@ -491,11 +526,7 @@ public:
             bi.ulFlags = BIF_EDITBOX | BIF_NEWDIALOGSTYLE | BIF_BROWSEFILEJUNCTIONS;
             CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl(SHBrowseForFolder(&bi));
             if (spidl)
-            {
-                CComPtr<IShellFolder> pFolder;
-                ATLVERIFY(SUCCEEDED(pShellFolder->BindToObject(spidl, 0, IID_PPV_ARGS(&pFolder))));
-                BrowseFolder(s_id++, pFolder, FVM_AUTO, nShowCmd, nullptr);
-            }
+                ATLVERIFY(SUCCEEDED(BrowseFolder(s_id++, spidl, FVM_AUTO, nShowCmd, nullptr)));
         }
 
         HRESULT hr = __super::PreMessageLoop(nShowCmd);
