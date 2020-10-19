@@ -20,6 +20,8 @@
 
 int s_id = 0;
 
+EXTERN_C const GUID DECLSPEC_SELECTANY IID_IShellBrowserService = { 0XDFBC7E30L, 0XF9E5, 0x455F, 0x88, 0xF8, 0xFA, 0x98, 0xC1, 0xE4, 0x94, 0xCA };
+
 HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, std::wstring name, HICON hIcon, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect);
 
 HRESULT BrowseFolder(int id, const ITEMIDLIST_ABSOLUTE* pidl, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
@@ -174,7 +176,6 @@ public:
             {
                 // TODO Get parent ViewMode
 
-
                 if ((wFlags & 0xF000) == SBSP_ABSOLUTE)
                 {
                     ATLVERIFY(SUCCEEDED(BrowseFolder(s_id++, pidl, FVM_AUTO, SW_SHOW, nullptr)));
@@ -241,15 +242,7 @@ public:
         _In_ REFIID riid,
         _Outptr_ void __RPC_FAR* __RPC_FAR* ppvObject) override
     {
-        if (IID_IShellBrowser == riid)
-        {
-            *ppvObject = static_cast<IShellBrowser*>(this);
-            AddRef();
-            return S_OK;
-        }
-
-        *ppvObject = NULL;
-        return E_NOINTERFACE;
+        return QueryInterface(riid, ppvObject);
     }
 
 private:
@@ -276,6 +269,7 @@ public:
     BEGIN_MSG_MAP(CMiniExplorerWnd)
         MSG_WM_CREATE(OnCreate)
         MSG_WM_DESTROY(OnDestroy)
+        MSG_WM_KEYDOWN(OnKeyDown)
         MSG_WM_SIZE(OnSize)
     END_MSG_MAP()
 
@@ -303,7 +297,8 @@ private:
         ATLVERIFY(SUCCEEDED(m_pExplorerBrowser->Initialize(m_hWnd, rc, &fs)));
         ATLVERIFY(SUCCEEDED(m_pExplorerBrowser->BrowseToObject(m_pShellFolder, 0)));
 
-        HWND hListView = FindWindowEx(m_hWnd, NULL, WC_LISTVIEW, nullptr);  // Doesn't work as it has a "DirectUIHWND" instead
+        ATLVERIFY(SUCCEEDED(m_pExplorerBrowser->GetCurrentView(IID_PPV_ARGS(&m_pShellView))));
+        //HWND hListView = FindWindowEx(m_hWnd, NULL, WC_LISTVIEW, nullptr);  // Doesn't work as it has a "DirectUIHWND" instead
 #else
 
 #if 1
@@ -325,6 +320,7 @@ private:
         {
             ATLVERIFY(SUCCEEDED(m_pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), static_cast<FOLDERFLAGS>(fs.fFlags), m_ViewMode, nullptr, rc, &m_hViewWnd)));
         }
+        // else TODO Implement IShellView2
         else
         {
             ATLVERIFY(SUCCEEDED(m_pShellView->CreateViewWindow(nullptr, &fs, m_pShellBrowser, rc, &m_hViewWnd)));
@@ -342,8 +338,25 @@ private:
         //ATLVERIFY(SUCCEEDED(m_pFolderView->SetCurrentViewMode(fs.ViewMode)));
 
         HWND hListView = FindWindowEx(m_hViewWnd, NULL, WC_LISTVIEW, nullptr);
-#endif
-        if (hListView != NULL)
+
+        CComPtr <IVisualProperties> pVisualProperties;
+        ATLVERIFY(SUCCEEDED(m_pShellView->QueryInterface(IID_PPV_ARGS(&pVisualProperties))));
+        if (pVisualProperties != nullptr)
+        {
+            if (true)
+            {
+                ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_TEXT, RGB(255, 255, 255))));
+                ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_BACKGROUND, RGB(0, 0, 0))));
+                ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_SORTCOLUMN, RGB(25, 25, 25))));
+                ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_SUBTEXT, RGB(200, 200, 2000))));
+                ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_TEXTBACKGROUND, RGB(255, 0, 0))));    // TODO Not sure what this is?
+            }
+            else
+            {
+                pVisualProperties->SetTheme(L"DarkMode_Explorer", nullptr);
+            }
+        }
+        else if (hListView != NULL)
         {
             ListView_SetBkColor(hListView, RGB(0, 0, 0));
             ListView_SetTextColor(hListView, RGB(255, 255, 255));
@@ -352,22 +365,19 @@ private:
 
             //ListView_SetView(hListView, LV_VIEW_SMALLICON);
         }
-
-#if 0
-        HRESULT hr;
-        CComPtr<IDropTarget> m_pDropTarget;
-        ATLVERIFY(SUCCEEDED(m_pShellView->QueryInterface(IID_PPV_ARGS(&m_pDropTarget))));
-        ATLVERIFY(SUCCEEDED(hr = RegisterDragDrop(m_hWnd, m_pDropTarget)));
 #endif
+
+        CComPtr<IDropTarget> pDropTarget;
+        ATLVERIFY(SUCCEEDED(m_pShellView->QueryInterface(IID_PPV_ARGS(&pDropTarget))));
+        ATLVERIFY(SUCCEEDED(RegisterDragDrop(m_hWnd, pDropTarget)));
 
         return 0;
     }
 
     void OnDestroy()
     {
-#ifdef USE_EXPLORER_BROWSER
-        m_pExplorerBrowser->Destroy();
-#else
+        ATLVERIFY(SUCCEEDED(RevokeDragDrop(m_hWnd)));
+
         TCHAR keyname[1024];
         _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\Windows\\%d"), m_id);
 
@@ -406,12 +416,18 @@ private:
             ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("view"), viewmode));
         }
 
-#if 0
-        ATLVERIFY(SUCCEEDED(RevokeDragDrop(m_hWnd)));
-#endif
+#ifdef USE_EXPLORER_BROWSER
+        ATLVERIFY(SUCCEEDED(m_pExplorerBrowser->Destroy()));
+#else
         ATLVERIFY(SUCCEEDED(m_pShellView->UIActivate(SVUIA_DEACTIVATE)));
         ATLVERIFY(SUCCEEDED(m_pShellView->DestroyViewWindow()));
 #endif
+    }
+
+    void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
+    {
+        // TODO How to implement "Delete", "F2", "Ctrl+C", "Ctrl+V", etc
+        SetMsgHandled(FALSE);
     }
 
     void OnSize(UINT nType, CSize size)
@@ -423,14 +439,28 @@ private:
         if (m_hViewWnd != NULL)
         {
             HWND hListView = FindWindowEx(m_hViewWnd, NULL, WC_LISTVIEW, nullptr);
-            if (hListView != NULL  && ListView_GetView(hListView) != LV_VIEW_DETAILS)
+            if (hListView != NULL)
             {
-                HWND hHeader = ListView_GetHeader(hListView);
-                if (hHeader != NULL)
+                // ListView isn't correctly removing the header when not in details mode
+                // TODO Need a way to detect when mode changes
+                if (true)
                 {
-                    CRect wrc;
-                    ::GetWindowRect(hHeader, wrc);
-                    rc.top -= wrc.Height();
+                    LONG style = ::GetWindowLong(hListView, GWL_STYLE);
+                    if (ListView_GetView(hListView) != LV_VIEW_DETAILS)
+                        style |= LVS_NOCOLUMNHEADER;
+                    else
+                        style &= ~LVS_NOCOLUMNHEADER;
+                    ::SetWindowLong(hListView, GWL_STYLE, style);
+                }
+                else if (ListView_GetView(hListView) != LV_VIEW_DETAILS)
+                {
+                    HWND hHeader = ListView_GetHeader(hListView);
+                    if (hHeader != NULL)
+                    {
+                        CRect wrc;
+                        ::GetWindowRect(hHeader, wrc);
+                        rc.top -= wrc.Height();
+                    }
                 }
             }
             ::SetWindowPos(m_hViewWnd, NULL, rc.left, rc.top, rc.Width(), rc.Height(), SWP_NOZORDER);
@@ -441,11 +471,11 @@ private:
     int m_id;
     FOLDERVIEWMODE m_ViewMode;
     CComPtr<IShellFolder> m_pShellFolder;
+    CComPtr<IShellView> m_pShellView;
 
 #ifdef USE_EXPLORER_BROWSER
     CComPtr<IExplorerBrowser> m_pExplorerBrowser;
 #else
-    CComPtr<IShellView> m_pShellView;
     CComPtr<IShellBrowser> m_pShellBrowser;
     HWND m_hViewWnd = NULL;
 #endif
@@ -466,6 +496,16 @@ HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring na
 class CModule : public ATL::CAtlExeModuleT< CModule >
 {
 public:
+    static HRESULT InitializeCom() throw()
+    {
+        return OleInitialize(NULL);
+    }
+
+    static void UninitializeCom() throw()
+    {
+        OleUninitialize();
+    }
+
     HRESULT PreMessageLoop(_In_ int nShowCmd) throw()
     {
         //AtlInitCommonControls(0xFFFF);
@@ -489,7 +529,7 @@ public:
 
                 DWORD temp;
 
-                CRect rc;
+                CRect rc = CMiniExplorerWnd::rcDefault;
                 ATLVERIFY(ERROR_SUCCESS == childreg.QueryDWORDValue(_T("top"), temp));
                 rc.top = temp;
                 ATLVERIFY(ERROR_SUCCESS == childreg.QueryDWORDValue(_T("left"), temp));
@@ -522,7 +562,7 @@ public:
         if (false)
         {
             BROWSEINFO bi = {};
-            //bi.lpszTitle
+            bi.lpszTitle = _T("Select a folder to open");
             bi.ulFlags = BIF_EDITBOX | BIF_NEWDIALOGSTYLE | BIF_BROWSEFILEJUNCTIONS;
             CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl(SHBrowseForFolder(&bi));
             if (spidl)
