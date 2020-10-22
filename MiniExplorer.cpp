@@ -1,4 +1,4 @@
-I#define _ATL_APARTMENT_THREADED
+#define _ATL_APARTMENT_THREADED
 
 // https://docs.microsoft.com/en-us/windows/win32/lwef/nse-folderview
 // https://github.com/pauldotknopf/WindowsSDK7-Samples/blob/master/winui/shell/appshellintegration/CustomJumpList/CustomJumpListSample.cpp
@@ -336,8 +336,8 @@ public:
 
     void OnFinalMessage(_In_ HWND /*hWnd*/) override
     {
-        if (Counter::get() == 1)
-            PostQuitMessage(0);
+        //if (Counter::get() == 1)
+            //PostQuitMessage(0);
         delete this;
     }
 
@@ -786,5 +786,6 @@ CModule _AtlModule;
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nShowCmd)
 {
-    return _AtlModule.WinMain(nShowCmd);
+    int r = _AtlModule.WinMain(nShowCmd);
+    return r;
 }
