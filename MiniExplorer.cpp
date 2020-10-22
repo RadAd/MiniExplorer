@@ -1,8 +1,11 @@
-#define _ATL_APARTMENT_THREADED
+I#define _ATL_APARTMENT_THREADED
 
 // https://docs.microsoft.com/en-us/windows/win32/lwef/nse-folderview
+// https://github.com/pauldotknopf/WindowsSDK7-Samples/blob/master/winui/shell/appshellintegration/CustomJumpList/CustomJumpListSample.cpp
 
 //#define USE_EXPLORER_BROWSER // https://www.codeproject.com/Articles/17809/Host-Windows-Explorer-in-your-applications-using-t
+
+#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 #include <atlbase.h>
 #include <atlwin.h>
@@ -13,12 +16,19 @@
 #include <Shlobj.h>
 #include <shobjidl_core.h>
 
+#include <propvarutil.h>
+#include <propkey.h>
+
+#include <strsafe.h>
+
 #include <tchar.h>
 #include <commctrl.h>
 #include <string>
 #include <set>
 
 int s_id = 0;
+
+#define CD_COMMAND_LINE 524
 
 EXTERN_C const GUID DECLSPEC_SELECTANY IID_IShellBrowserService = { 0XDFBC7E30L, 0XF9E5, 0x455F, 0x88, 0xF8, 0xFA, 0x98, 0xC1, 0xE4, 0x94, 0xCA };
 
@@ -45,6 +55,26 @@ HRESULT BrowseFolder(int id, const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags,
 
     return BrowseFolder(s_id++, pFolder, sfi.szDisplayName, sfi.hIcon, flags, ViewMode, nShowCmd, pRect);
 #endif
+}
+
+void AddMiniExplorer(_In_ int nShowCmd)
+{
+    BROWSEINFO bi = {};
+    bi.lpszTitle = _T("Select a folder to open");
+    bi.ulFlags = BIF_EDITBOX | BIF_NEWDIALOGSTYLE | BIF_BROWSEFILEJUNCTIONS;
+    CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl(SHBrowseForFolder(&bi));
+    if (spidl)
+        ATLVERIFY(SUCCEEDED(BrowseFolder(s_id++, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
+}
+
+void ParseCommandLine(PCWSTR lpCmdLine)
+{
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(lpCmdLine, &argc);
+    if (argc > 1 && _wcsicmp(argv[1], _T("/Add")) == 0)
+    {
+        AddMiniExplorer(SW_SHOW);
+    }
 }
 
 class Counter
@@ -77,6 +107,8 @@ public:
         s_registry.erase(m_pThis);
     }
 
+    static const std::set<T*>& get() { return s_registry; }
+
 private:
     T* m_pThis;
     static std::set<T*> s_registry;
@@ -89,8 +121,7 @@ std::set<T*> Registered<T>::s_registry;
 class CShellBrowser :
     public CComObjectRootEx<ATL::CComSingleThreadModel>,
     public IShellBrowser,
-    public IServiceProvider,
-    public Registered<CShellBrowser>
+    public IServiceProvider
 {
     BEGIN_COM_MAP(CShellBrowser)
         COM_INTERFACE_ENTRY_IID(IID_IUnknown, IOleWindow)
@@ -100,11 +131,6 @@ class CShellBrowser :
     END_COM_MAP()
 
 public:
-    CShellBrowser()
-        : Registered<CShellBrowser>(this)
-    {
-    }
-
     void Init(HWND hWnd, int id, CComPtr<IShellFolder> pFolder)
     {
         m_hWnd = hWnd;
@@ -261,19 +287,22 @@ private:
     CComPtr<IShellFolder> m_pFolder;
 };
 
-typedef CWinTraits<WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES /*| WS_EX_TOOLWINDOW*/>		CMiniExplorerTraits;
+typedef CWinTraits<WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES | WS_EX_APPWINDOW /*| WS_EX_TOOLWINDOW*/>		CMiniExplorerTraits;
 
-class CMiniExplorerWnd :
-    public CWindowImpl<CMiniExplorerWnd, CWindow, CMiniExplorerTraits>
+class CMiniExplorerWnd : public CWindowImpl<CMiniExplorerWnd, CWindow, CMiniExplorerTraits>,
+    public Registered<CMiniExplorerWnd>
 {
 public:
+    DECLARE_WND_CLASS(_T("MINI_EXPLORER"))
+
     static LPCTSTR GetWndCaption()
     {
         return _T("Mini Explorer");
     }
 
     CMiniExplorerWnd(int id, CComPtr<IShellFolder> pShellFolder, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
-        : m_id(id), m_pShellFolder(pShellFolder), m_flags(flags), m_ViewMode(ViewMode)
+        : Registered<CMiniExplorerWnd>(this)
+        , m_id(id), m_pShellFolder(pShellFolder), m_flags(flags), m_ViewMode(ViewMode)
     {
     }
 
@@ -282,7 +311,28 @@ public:
         MSG_WM_DESTROY(OnDestroy)
         MSG_WM_KEYDOWN(OnKeyDown)
         MSG_WM_SIZE(OnSize)
+        MSG_WM_COPYDATA(OnCopyData)
     END_MSG_MAP()
+
+    int GetId() const
+    {
+        return m_id;
+    }
+
+    void GetInfo(std::wstring& name, std::wstring& icon_location, int& iIcon) const
+    {
+        CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+        ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(m_pShellFolder, &spidl)));
+
+        CComHeapPtr<wchar_t> folder_name;
+        ATLVERIFY(SUCCEEDED(SHGetNameFromIDList(spidl, SIGDN_NORMALDISPLAY, &folder_name)));
+        name = folder_name;
+
+        SHFILEINFO sfi = {};
+        SHGetFileInfoW(reinterpret_cast<LPCWSTR>(static_cast<ITEMIDLIST_ABSOLUTE*>(spidl)), 0, &sfi, sizeof(sfi), SHGFI_PIDL | SHGFI_ICONLOCATION);
+        icon_location = sfi.szDisplayName;
+        iIcon = sfi.iIcon;
+    }
 
     void OnFinalMessage(_In_ HWND /*hWnd*/) override
     {
@@ -327,7 +377,7 @@ private:
         m_pShellBrowser = pCom;
 
         CComPtr<IShellView3> m_pShellView3;
-        if (SUCCEEDED(m_pShellView->QueryInterface(IID_PPV_ARGS(&m_pShellView3))))
+        if (SUCCEEDED(m_pShellView.QueryInterface(&m_pShellView3)))
         {
             ATLVERIFY(SUCCEEDED(m_pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), m_flags, m_ViewMode, nullptr, rc, &m_hViewWnd)));
         }
@@ -339,7 +389,7 @@ private:
 
 #if 0
         CComPtr<IFolderView> m_pFolderView;
-        ATLVERIFY(SUCCEEDED(m_pShellView->QueryInterface(IID_PPV_ARGS(&m_pFolderView))));
+        ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&m_pFolderView)));
 
         ATLVERIFY(SUCCEEDED(m_pFolderView->SetCurrentViewMode(fs.ViewMode)));
 #endif
@@ -351,7 +401,7 @@ private:
         HWND hListView = FindWindowEx(m_hViewWnd, NULL, WC_LISTVIEW, nullptr);
 
         CComPtr <IVisualProperties> pVisualProperties;
-        ATLVERIFY(SUCCEEDED(m_pShellView->QueryInterface(IID_PPV_ARGS(&pVisualProperties))));
+        ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&pVisualProperties)));
         if (pVisualProperties != nullptr)
         {
             if (true)
@@ -379,7 +429,7 @@ private:
 #endif
 
         CComPtr<IDropTarget> pDropTarget;
-        ATLVERIFY(SUCCEEDED(m_pShellView->QueryInterface(IID_PPV_ARGS(&pDropTarget))));
+        ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&pDropTarget)));
         ATLVERIFY(SUCCEEDED(RegisterDragDrop(m_hWnd, pDropTarget)));
 
         return 0;
@@ -421,7 +471,7 @@ private:
         else if (false)
         {
             CComPtr<IFolderView> m_pFolderView;
-            ATLVERIFY(SUCCEEDED(m_pShellView->QueryInterface(IID_PPV_ARGS(&m_pFolderView))));
+            ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&m_pFolderView)));
 
             UINT viewmode = 0;
             ATLVERIFY(SUCCEEDED(m_pFolderView->GetCurrentViewMode(&viewmode)));
@@ -483,6 +533,16 @@ private:
 #endif
     }
 
+    BOOL OnCopyData(CWindow wnd, PCOPYDATASTRUCT pCopyDataStruct)
+    {
+        if (pCopyDataStruct->dwData == CD_COMMAND_LINE)
+        {
+            SetForegroundWindow(m_hWnd);
+            ::ParseCommandLine((LPTSTR) pCopyDataStruct->lpData);
+        }
+        return TRUE;
+    }
+
     int m_id;
     FOLDERFLAGS m_flags;
     FOLDERVIEWMODE m_ViewMode;
@@ -498,17 +558,136 @@ private:
     Counter m_counter;
 };
 
+HWND s_MainWnd = NULL;
+
 HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring name, HICON hIcon, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
 {
     // TODO Put flags, ViewMode in create params
     CMiniExplorerWnd* mainwnd = new CMiniExplorerWnd(id, pShellFolder, flags, ViewMode);
-    if (!mainwnd->Create(NULL, pRect))
+    if (!mainwnd->Create(s_MainWnd, pRect))
         return AtlHresultFromWin32(GetLastError());
     mainwnd->SetWindowText((name + L" - " + CMiniExplorerWnd::GetWndCaption()).c_str());
     mainwnd->SetIcon(hIcon);
     mainwnd->ShowWindow(nShowCmd);
     return S_OK;
 }
+
+HRESULT _CreateShellLink(PCWSTR pszArguments, PCWSTR pszTitle, PCWSTR pszIconLocation, int iIcon, IShellLink** ppsl)
+{
+    CComPtr<IShellLink> psl;
+    ATLENSURE_RETURN(SUCCEEDED(psl.CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER)));
+
+    // Determine our executable's file path so the task will execute this application
+    WCHAR szAppPath[MAX_PATH];
+    ATLENSURE_RETURN_HR(GetModuleFileName(NULL, szAppPath, ARRAYSIZE(szAppPath)), HRESULT_FROM_WIN32(GetLastError()));
+
+    ATLVERIFY(SUCCEEDED(psl->SetPath(szAppPath)));
+    ATLVERIFY(SUCCEEDED(psl->SetArguments(pszArguments)));
+    if (pszIconLocation != nullptr)
+        ATLVERIFY(SUCCEEDED(psl->SetIconLocation(pszIconLocation, iIcon)));
+
+    // The title property is required on Jump List items provided as an IShellLink
+    // instance.  This value is used as the display name in the Jump List.
+    CComPtr<IPropertyStore> pps;
+    ATLVERIFY(SUCCEEDED(psl.QueryInterface(&pps)));
+
+    PROPVARIANT propvar;
+    ATLVERIFY(SUCCEEDED(InitPropVariantFromString(pszTitle, &propvar)));
+    ATLVERIFY(SUCCEEDED(pps->SetValue(PKEY_Title, propvar)));
+    ATLVERIFY(SUCCEEDED(pps->Commit()));
+    ATLVERIFY(SUCCEEDED(psl.QueryInterface(ppsl)));
+    ATLVERIFY(SUCCEEDED(PropVariantClear(&propvar)));
+
+    return S_OK;
+}
+
+HRESULT _CreateSeparatorLink(IShellLink** ppsl)
+{
+    CComPtr<IPropertyStore> pps;
+    ATLENSURE_RETURN(SUCCEEDED(pps.CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER)));
+
+    PROPVARIANT propvar;
+    ATLVERIFY(SUCCEEDED(InitPropVariantFromBoolean(TRUE, &propvar)));
+    ATLVERIFY(SUCCEEDED(pps->SetValue(PKEY_AppUserModel_IsDestListSeparator, propvar)));
+    ATLVERIFY(SUCCEEDED(pps->Commit()));
+    ATLVERIFY(SUCCEEDED(pps.QueryInterface(ppsl)));
+    ATLVERIFY(SUCCEEDED(PropVariantClear(&propvar)));
+
+    return S_OK;
+}
+
+HRESULT _AddShellLink(IObjectCollection* poc, PCWSTR pszArguments, PCWSTR pszTitle, PCWSTR pszIconLocation, int iIcon)
+{
+    CComPtr<IShellLink> psl;
+    ATLENSURE_RETURN(SUCCEEDED(_CreateShellLink(pszArguments, pszTitle, pszIconLocation, iIcon, &psl)));
+    ATLENSURE_RETURN(SUCCEEDED(poc->AddObject(psl)));
+    return S_OK;
+}
+
+HRESULT _AddSeparatorLink(IObjectCollection* poc)
+{
+    CComPtr<IShellLink> psl;
+    ATLENSURE_RETURN(SUCCEEDED(_CreateSeparatorLink(&psl)));
+    ATLENSURE_RETURN(SUCCEEDED(poc->AddObject(psl)));
+    return S_OK;
+}
+
+HRESULT _AddTasksToList(ICustomDestinationList* pcdl)
+{
+    CComPtr<IObjectCollection> poc;
+    ATLENSURE_RETURN(SUCCEEDED(poc.CoCreateInstance(CLSID_EnumerableObjectCollection, NULL, CLSCTX_INPROC)));
+
+    ATLVERIFY(SUCCEEDED(_AddShellLink(poc, L"/Add", L"Add Window", nullptr, -1)));
+    ATLVERIFY(SUCCEEDED(_AddShellLink(poc, L"/Remove", L"Remove Window", nullptr, -1)));
+    ATLVERIFY(SUCCEEDED(_AddSeparatorLink(poc)));
+    for (CMiniExplorerWnd* wnd : Registered<CMiniExplorerWnd>::get())
+    {
+        TCHAR cmd[1024];
+        _stprintf_s(cmd, _T("/Open %d"), wnd->GetId());
+
+        std::wstring name;
+        std::wstring icon_location;
+        int iIcon;
+        wnd->GetInfo(name, icon_location, iIcon);
+
+        ATLVERIFY(SUCCEEDED(_AddShellLink(poc, cmd, name.c_str(), icon_location.c_str(), iIcon)));
+    }
+
+    CComPtr<IObjectArray> poa;
+    ATLVERIFY(SUCCEEDED(poc.QueryInterface(&poa)));
+
+    // Add the tasks to the Jump List. Tasks always appear in the canonical "Tasks"
+    // category that is displayed at the bottom of the Jump List, after all other
+    // categories.
+    ATLVERIFY(SUCCEEDED(pcdl->AddUserTasks(poa)));
+
+    return S_OK;
+}
+
+void CreateJumpList()
+{
+    CComPtr<ICustomDestinationList> pcdl;
+    ATLVERIFY(SUCCEEDED(pcdl.CoCreateInstance(CLSID_DestinationList, nullptr, CLSCTX_INPROC_SERVER)));
+
+    UINT cMinSlots;
+    CComPtr<IObjectArray> poaRemoved;
+    ATLVERIFY(SUCCEEDED(pcdl->BeginList(&cMinSlots, IID_PPV_ARGS(&poaRemoved))));
+    ATLVERIFY(SUCCEEDED(_AddTasksToList(pcdl)));
+    ATLVERIFY(SUCCEEDED(pcdl->CommitList()));
+}
+
+class CMainWnd :
+    public CWindowImpl<CMainWnd, CWindow, CFrameWinTraits>
+{
+public:
+    static LPCTSTR GetWndCaption()
+    {
+        return _T("Mini Explorer");
+    }
+
+    BEGIN_MSG_MAP(CMainWnd)
+    END_MSG_MAP()
+};
 
 class CModule : public ATL::CAtlExeModuleT< CModule >
 {
@@ -525,10 +704,21 @@ public:
 
     HRESULT PreMessageLoop(_In_ int nShowCmd) throw()
     {
+        HWND hWnd = FindWindow(CMiniExplorerWnd::GetWndClassInfo().m_wc.lpszClassName, nullptr);
+        if (hWnd != NULL)
+        {
+            COPYDATASTRUCT cds;
+            cds.dwData = CD_COMMAND_LINE;
+            cds.lpData = GetCommandLine();
+            cds.cbData = (DWORD) (_tcslen(GetCommandLine()) + 1) * sizeof(TCHAR);
+            ::SendMessage(hWnd, WM_COPYDATA, NULL, (LPARAM) &cds);
+            return S_FALSE;
+        }
+
         //AtlInitCommonControls(0xFFFF);
 
-        CComPtr<IShellFolder> pShellFolder;
-        ATLVERIFY(SUCCEEDED(SHGetDesktopFolder(&pShellFolder)));
+        CMainWnd* main_wnd = new CMainWnd();
+        s_MainWnd = main_wnd->Create(NULL);
 
         CRegKey reg;
         reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
@@ -579,15 +769,10 @@ public:
             _putts(name);
         }
 
-        if (false)
-        {
-            BROWSEINFO bi = {};
-            bi.lpszTitle = _T("Select a folder to open");
-            bi.ulFlags = BIF_EDITBOX | BIF_NEWDIALOGSTYLE | BIF_BROWSEFILEJUNCTIONS;
-            CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl(SHBrowseForFolder(&bi));
-            if (spidl)
-                ATLVERIFY(SUCCEEDED(BrowseFolder(s_id++, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
-        }
+        CreateJumpList();
+
+        if (hWnd == NULL)
+            ::ParseCommandLine(GetCommandLine());
 
         HRESULT hr = __super::PreMessageLoop(nShowCmd);
         if (FAILED(hr))
