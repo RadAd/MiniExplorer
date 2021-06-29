@@ -5,6 +5,11 @@
 
 //#define USE_EXPLORER_BROWSER // https://www.codeproject.com/Articles/17809/Host-Windows-Explorer-in-your-applications-using-t
 
+// TODO
+// Store and use colours from registry
+// Switching between details and not doesn't show headings
+// Where to store settings for adhoc windows???
+
 #pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 #include <atlbase.h>
@@ -33,7 +38,7 @@ int s_id = 0;
 EXTERN_C const GUID DECLSPEC_SELECTANY IID_IShellBrowserService = { 0XDFBC7E30L, 0XF9E5, 0x455F, 0x88, 0xF8, 0xFA, 0x98, 0xC1, 0xE4, 0x94, 0xCA };
 
 HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, std::wstring name, HICON hIcon, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect);
-bool ParseCommandLine(PCWSTR lpCmdLine);
+void OpenMRU(const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode);
 void CreateJumpList();
 
 HRESULT BrowseFolder(int id, const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
@@ -41,8 +46,14 @@ HRESULT BrowseFolder(int id, const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags,
     CComPtr<IShellFolder> pShellFolder;
     ATLVERIFY(SUCCEEDED(SHGetDesktopFolder(&pShellFolder)));
 
+    CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+    ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(pShellFolder, &spidl)));
+
     CComPtr<IShellFolder> pFolder;
-    ATLVERIFY(SUCCEEDED(pShellFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
+    if (ILIsEqual(pidl, spidl))
+        pFolder = pShellFolder;
+    else
+        ATLVERIFY(SUCCEEDED(pShellFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
 
 #if 0
     CComHeapPtr<wchar_t> folder_name;
@@ -189,15 +200,19 @@ public:
     STDMETHOD(BrowseObject)(
         _In_opt_ PCUIDLIST_RELATIVE pidl, UINT wFlags) override
     {
-        if (false)
+        if (!(GetKeyState(VK_SHIFT) & 0x8000))
         {
             if (pidl != nullptr)
             {
-                // TODO Get parent ViewMode
+                FOLDERSETTINGS fs = {};
+                fs.ViewMode = FVM_AUTO;
+                fs.fFlags = FWF_NONE;
+                if (m_pShellView != nullptr)
+                    ATLVERIFY(SUCCEEDED(m_pShellView->GetCurrentInfo(&fs)));
 
                 if ((wFlags & 0xF000) == SBSP_ABSOLUTE)
                 {
-                    ATLVERIFY(SUCCEEDED(BrowseFolder(-1, pidl, FWF_NONE, FVM_AUTO, SW_SHOW, nullptr)));
+                    OpenMRU(pidl, (FOLDERFLAGS) fs.fFlags, (FOLDERVIEWMODE) fs.ViewMode);
                 }
                 else if ((wFlags & 0xF000) == SBSP_RELATIVE)
                 {
@@ -206,7 +221,8 @@ public:
                     std::wstring name;
                     HICON hIcon = NULL;
                     ATLVERIFY(SUCCEEDED(m_pFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
-                    ATLVERIFY(SUCCEEDED(BrowseFolder(-1, pFolder, name, hIcon, FWF_NONE, FVM_AUTO, SW_SHOW, nullptr)));
+                    // TODO Find the appropriate id
+                    ATLVERIFY(SUCCEEDED(BrowseFolder(-100, pFolder, name, hIcon, (FOLDERFLAGS) fs.fFlags, (FOLDERVIEWMODE) fs.ViewMode, SW_SHOW, nullptr)));
                 }
             }
 
@@ -223,7 +239,10 @@ public:
         if (ppStrm != nullptr)
         {
             TCHAR keyname[1024];
-            _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\Windows\\%d"), m_id);
+            if (m_id >= 0)
+                _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\Windows\\%d"), m_id);
+            else
+                _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\MRU\\%d"), -m_id);
             *ppStrm = SHOpenRegStream2(HKEY_CURRENT_USER, keyname, _T("state"), grfMode);
             //ATLVERIFY(*ppStrm != nullptr);
             return *ppStrm != nullptr ? S_OK : E_FAIL;
@@ -249,12 +268,15 @@ public:
     STDMETHOD(QueryActiveShellView)(
         _Out_ IShellView** ppshv) override
     {
-        return E_NOTIMPL;
+        if (ppshv != nullptr)
+            *ppshv = m_pShellView;
+        return S_OK;
     }
 
     STDMETHOD(OnViewWindowActive)(
         _In_ IShellView* pshv) override
     {
+        m_pShellView = pshv;
         return S_OK;
     }
 
@@ -278,6 +300,7 @@ private:
     HWND m_hWnd = NULL;
     int m_id = -1;
     CComPtr<IShellFolder> m_pFolder;
+    IShellView* m_pShellView = nullptr;
 };
 
 typedef CWinTraits<WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES | WS_EX_APPWINDOW /*| WS_EX_TOOLWINDOW*/>		CMiniExplorerTraits;
@@ -300,8 +323,8 @@ public:
     BEGIN_MSG_MAP(CMiniExplorerWnd)
         MSG_WM_CREATE(OnCreate)
         MSG_WM_DESTROY(OnDestroy)
-        MSG_WM_KEYDOWN(OnKeyDown)
         MSG_WM_SIZE(OnSize)
+        MSG_WM_SETFOCUS(OnSetFocus)
     END_MSG_MAP()
 
     int GetId() const
@@ -314,6 +337,11 @@ public:
         //if (Counter::get() == 1)
             //PostQuitMessage(0);
         delete this;
+    }
+
+    HRESULT TranslateAccelerator(MSG* pmsg)
+    {
+        return m_pShellView->TranslateAccelerator(pmsg);
     }
 
 private:
@@ -414,46 +442,52 @@ private:
     {
         ATLVERIFY(SUCCEEDED(RevokeDragDrop(m_hWnd)));
 
-        TCHAR keyname[1024];
-        _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\Windows\\%d"), m_id);
-
-        CRegKey reg;
-        ATLVERIFY(ERROR_SUCCESS == reg.Create(HKEY_CURRENT_USER, keyname));
-
-        CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
-        ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(m_pShellFolder, &spidl)));
-
-        ATLVERIFY(ERROR_SUCCESS == reg.SetBinaryValue(_T("pidl"), reinterpret_cast<BYTE*>(static_cast<PIDLIST_ABSOLUTE>(spidl)), ILGetSize(spidl)));
-
-        CRect rc;
-        GetWindowRect(rc);
-        ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("top"), rc.top));
-        ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("left"), rc.left));
-        ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("bottom"), rc.bottom));
-        ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("right"), rc.right));
-
-        // TODO May be better to use m_pShellView->SaveViewState()
-        m_pShellView->SaveViewState();
-
         if (true)
         {
-            FOLDERSETTINGS fs = {};
-            ATLVERIFY(SUCCEEDED(m_pShellView->GetCurrentInfo(&fs)));
+            TCHAR keyname[1024];
+            if (m_id >= 0)
+                _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\Windows\\%d"), m_id);
+            else
+                _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\MRU\\%d"), -m_id);
 
-            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("view"), fs.ViewMode));
-            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("flags"), fs.fFlags));
-        }
-        else if (false)
-        {
-            CComPtr<IFolderView> m_pFolderView;
-            ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&m_pFolderView)));
+            CRegKey reg;
+            ATLVERIFY(ERROR_SUCCESS == reg.Create(HKEY_CURRENT_USER, keyname));
 
-            UINT viewmode = 0;
-            ATLVERIFY(SUCCEEDED(m_pFolderView->GetCurrentViewMode(&viewmode)));
+            CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+            ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(m_pShellFolder, &spidl)));
 
-            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("view"), viewmode));
+            ATLVERIFY(ERROR_SUCCESS == reg.SetBinaryValue(_T("pidl"), reinterpret_cast<BYTE*>(static_cast<PIDLIST_ABSOLUTE>(spidl)), ILGetSize(spidl)));
 
-            // TODO Use IFolderView2 to get more settings
+            CRect rc;
+            GetWindowRect(rc);
+            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("top"), rc.top));
+            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("left"), rc.left));
+            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("bottom"), rc.bottom));
+            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("right"), rc.right));
+
+            // TODO May be better to use m_pShellView->SaveViewState()
+            m_pShellView->SaveViewState();
+
+            if (true)
+            {
+                FOLDERSETTINGS fs = {};
+                ATLVERIFY(SUCCEEDED(m_pShellView->GetCurrentInfo(&fs)));
+
+                ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("view"), fs.ViewMode));
+                ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("flags"), fs.fFlags));
+            }
+            else if (false)
+            {
+                CComPtr<IFolderView> m_pFolderView;
+                ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&m_pFolderView)));
+
+                UINT viewmode = 0;
+                ATLVERIFY(SUCCEEDED(m_pFolderView->GetCurrentViewMode(&viewmode)));
+
+                ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("view"), viewmode));
+
+                // TODO Use IFolderView2 to get more settings
+            }
         }
 
 #ifdef USE_EXPLORER_BROWSER
@@ -462,12 +496,6 @@ private:
         ATLVERIFY(SUCCEEDED(m_pShellView->UIActivate(SVUIA_DEACTIVATE)));
         ATLVERIFY(SUCCEEDED(m_pShellView->DestroyViewWindow()));
 #endif
-    }
-
-    void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
-    {
-        // TODO How to implement "Delete", "F2", "Ctrl+C", "Ctrl+V", etc
-        SetMsgHandled(FALSE);
     }
 
     void OnSize(UINT nType, CSize size)
@@ -506,6 +534,12 @@ private:
             ::SetWindowPos(m_hViewWnd, NULL, rc.left, rc.top, rc.Width(), rc.Height(), SWP_NOZORDER);
         }
 #endif
+    }
+
+    void OnSetFocus(CWindow wndOld)
+    {
+        m_pShellView->UIActivate(SVUIA_ACTIVATE_FOCUS);
+        //::SetFocus(m_hViewWnd);
     }
 
     int m_id;
@@ -547,14 +581,16 @@ CMiniExplorerWnd* GetMiniExplorer(int id)
     return nullptr;
 }
 
-void OpenMiniExplorer(HKEY hKeyParent, LPCTSTR lpszKeyName, int nShowCmd)
+bool OpenMiniExplorer(HKEY hKeyParent, LPCTSTR lpszKeyName, const int id, const int nShowCmd)
 {
-    int id = std::stoi(lpszKeyName);
-
     ATLVERIFY(GetMiniExplorer(id) == nullptr);
 
     CRegKey childreg;
-    childreg.Open(hKeyParent, lpszKeyName);
+    if (childreg.Open(hKeyParent, lpszKeyName) != ERROR_SUCCESS)
+    {
+        MessageBox(NULL, _T("No entry."), _T("Mini Explorer"), MB_ICONERROR | MB_OK);
+        return false;
+    }
 
     DWORD temp;
 
@@ -582,9 +618,55 @@ void OpenMiniExplorer(HKEY hKeyParent, LPCTSTR lpszKeyName, int nShowCmd)
     childreg.QueryBinaryValue(_T("pidl"), spidl, &bytes);
 
     ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, flags, ViewMode, nShowCmd, &rc)));
+
+    return true;
 }
 
-bool ParseCommandLine(PCWSTR lpCmdLine)
+void OpenMRU(const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
+{
+    int max = 0;
+    CRegKey reg;
+    reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\MRU"));
+
+    {
+        TCHAR name[1024];
+        DWORD szname = 0;
+        DWORD index = 0;
+        while (szname = ARRAYSIZE(name), ERROR_SUCCESS == reg.EnumKey(index++, name, &szname))
+        {
+            CRegKey childreg;
+            childreg.Open(reg, name);
+
+            const int id = std::stoi(name);
+            if (id > max)
+                max = id;
+
+            CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+            ULONG bytes = 0;
+            childreg.QueryBinaryValue(_T("pidl"), nullptr, &bytes);
+            if (ILGetSize(pidl) == bytes)
+            {
+                spidl.AllocateBytes(bytes);
+                childreg.QueryBinaryValue(_T("pidl"), spidl, &bytes);
+
+                if (ILIsEqual(pidl, spidl))
+                {
+                    CMiniExplorerWnd* wnd = GetMiniExplorer(-id);
+                    if (wnd == nullptr)
+                        OpenMiniExplorer(reg, name, -id, SW_SHOW);
+                    else
+                        SetForegroundWindow(*wnd);
+                    return;
+                }
+            }
+        }
+    }
+    // TODO Potentially resuse an id if there are too many (need to keep an MRU list)
+    const int id = -(max + 1);
+    ATLVERIFY(SUCCEEDED(BrowseFolder(id, pidl, flags, ViewMode, SW_SHOW, nullptr)));
+}
+
+bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
 {
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(lpCmdLine, &argc);
@@ -592,6 +674,14 @@ bool ParseCommandLine(PCWSTR lpCmdLine)
     {
         AddMiniExplorer(SW_SHOW);
         CreateJumpList();
+        return true;
+    }
+    else if (argc > 1 && _wcsicmp(argv[1], _T("/Remove")) == 0)
+    {
+        // TODO Select an entry
+        // Close window if open
+        // Delete registry entry
+        //CreateJumpList();
         return true;
     }
     else if (argc > 2 && _wcsicmp(argv[1], _T("/Open")) == 0)
@@ -605,12 +695,37 @@ bool ParseCommandLine(PCWSTR lpCmdLine)
             CRegKey reg;
             reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
 
-            OpenMiniExplorer(reg, argv[2], SW_SHOW);
+            if (!OpenMiniExplorer(reg, argv[2], std::stoi(argv[2]), nShowCmd))
+                return false;
         }
         else
         {
             SetForegroundWindow(*wnd);
         }
+
+        return true;
+    }
+    else if (argc == 1)
+    {
+        CRegKey reg;
+        reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
+
+        TCHAR name[1024];
+        DWORD szname = 0;
+        DWORD index = 0;
+        while (szname = ARRAYSIZE(name), ERROR_SUCCESS == reg.EnumKey(index++, name, &szname))
+        {
+            int id = std::stoi(name);
+
+            CMiniExplorerWnd* wnd = GetMiniExplorer(id);
+
+            if (wnd == nullptr)
+                OpenMiniExplorer(reg, name, id, nShowCmd);
+
+            if (s_id <= id)
+                s_id = id + 1;
+        }
+        _putts(name);
 
         return true;
     }
@@ -763,7 +878,7 @@ private:
         if (pCopyDataStruct->dwData == CD_COMMAND_LINE)
         {
             SetForegroundWindow(m_hWnd);
-            ::ParseCommandLine((LPTSTR) pCopyDataStruct->lpData);
+            ::ParseCommandLine((LPTSTR) pCopyDataStruct->lpData, SW_SHOW);
         }
         return TRUE;
     }
@@ -800,32 +915,8 @@ public:
         CMainWnd* main_wnd = new CMainWnd();
         s_MainWnd = main_wnd->Create(NULL);
 
-        bool bOpenAll = true;
-        if (hWnd == NULL)
-            bOpenAll = !::ParseCommandLine(GetCommandLine());
-
-        if (bOpenAll)
-        {
-            CRegKey reg;
-            reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
-
-            TCHAR name[1024];
-            DWORD szname = 0;
-            DWORD index = 0;
-            while (szname = ARRAYSIZE(name), ERROR_SUCCESS == reg.EnumKey(index++, name, &szname))
-            {
-                int id = std::stoi(name);
-
-                CMiniExplorerWnd* wnd = GetMiniExplorer(id);
-
-                if (wnd == nullptr)
-                    OpenMiniExplorer(reg, name, nShowCmd);
-
-                if (s_id <= id)
-                    s_id = id + 1;
-            }
-            _putts(name);
-        }
+        if (!::ParseCommandLine(GetCommandLine(), nShowCmd))
+            return -1;
 
         CreateJumpList();
 
@@ -834,6 +925,29 @@ public:
             return hr;
 
         return S_OK;
+    }
+
+    void RunMessageLoop() throw()
+    {
+        MSG msg;
+        while (GetMessage(&msg, 0, 0, 0) > 0)
+        {
+            CMiniExplorerWnd* pMiniExplorerWnd = nullptr;
+            for (CMiniExplorerWnd* wnd : Registered<CMiniExplorerWnd>::get())
+            {
+                if (*wnd == msg.hwnd || wnd->IsChild(msg.hwnd))
+                {
+                    pMiniExplorerWnd = wnd;
+                    break;
+                }
+            }
+
+            if (pMiniExplorerWnd == nullptr || pMiniExplorerWnd->TranslateAccelerator(&msg) != S_OK)
+            {
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
+        }
     }
 };
 

@@ -8,6 +8,7 @@
 // Generated from the TEXTINCLUDE 2 resource.
 //
 #include "winres.h"
+#include "atlres.h"
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -33,6 +34,7 @@ END
 2 TEXTINCLUDE 
 BEGIN
     "#include ""winres.h""\r\n"
+    "#include ""atlres.h""\r\n"
     "\0"
 END
 
@@ -62,7 +64,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_AUS
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_MINI_EXPLORER               ICON                    "res\\MiniExplorer.ico"
+IDI_MINI_EXPLORER       ICON                    "res\\MiniExplorer.ico"
 
 #endif    // English (Australia) resources
 /////////////////////////////////////////////////////////////////////////////
