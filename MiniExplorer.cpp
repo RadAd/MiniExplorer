@@ -39,7 +39,7 @@ CMiniExplorerWnd* GetMiniExplorer(int id)
     return nullptr;
 }
 
-int Find(CRegKey reg, const ITEMIDLIST_ABSOLUTE* pidl, bool& isnew)
+int Find(CRegKey& reg, const ITEMIDLIST_ABSOLUTE* pidl, bool& isnew)
 {
     std::set<int> used;
     isnew = false;
@@ -52,6 +52,9 @@ int Find(CRegKey reg, const ITEMIDLIST_ABSOLUTE* pidl, bool& isnew)
         CRegKey childreg;
         childreg.Open(reg, name);
 
+        const int id = std::stoi(name);
+        used.insert(id);
+
         CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
         ULONG bytes = 0;
         childreg.QueryBinaryValue(_T("pidl"), nullptr, &bytes);
@@ -60,15 +63,12 @@ int Find(CRegKey reg, const ITEMIDLIST_ABSOLUTE* pidl, bool& isnew)
             spidl.AllocateBytes(bytes);
             childreg.QueryBinaryValue(_T("pidl"), spidl, &bytes);
 
-            const int id = std::stoi(name);
             if (ILIsEqual(pidl, spidl))
                 return std::stoi(name);
-            else
-                used.insert(id);
         }
     }
     isnew = true;
-    int newid = 0;
+    int newid = 1;
     while (used.find(newid) != used.end())
         ++newid;
     return newid;
@@ -164,8 +164,6 @@ bool AddMiniExplorer(_In_ int nShowCmd)
     CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl(SHBrowseForFolder(&bi));
     if (spidl)
     {
-        std::set<int> used;
-
         CRegKey reg;
         reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
 
