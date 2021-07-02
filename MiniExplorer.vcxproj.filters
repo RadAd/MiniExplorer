@@ -8,9 +8,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MiniExplorer.cpp" />
+    <ClCompile Include="MiniExplorerWnd.cpp" />
+    <ClCompile Include="JumpList.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
+    <ClInclude Include="MiniExplorerWnd.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="MiniExplorer.rc">

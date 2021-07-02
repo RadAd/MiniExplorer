@@ -75,9 +75,12 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <ClCompile Include="JumpList.cpp" />
     <ClCompile Include="MiniExplorer.cpp" />
+    <ClCompile Include="MiniExplorerWnd.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="MiniExplorerWnd.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
