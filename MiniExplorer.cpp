@@ -30,6 +30,7 @@
 #include <commctrl.h>
 #include <string>
 #include <set>
+#include <vector>
 
 int s_id = 0;
 
@@ -648,6 +649,17 @@ void OpenMRU(const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE 
             {
                 spidl.AllocateBytes(bytes);
                 childreg.QueryBinaryValue(_T("pidl"), spidl, &bytes);
+
+                std::vector<unsigned char> mru;
+                ULONG bytes = 0;
+                reg.QueryBinaryValue(_T("mru"), nullptr, &bytes);
+                mru.resize(bytes / sizeof(unsigned char));
+                reg.QueryBinaryValue(_T("mru"), mru.data(), &bytes);
+
+                mru.erase(std::remove(mru.begin(), mru.end(), id), mru.end());
+                mru.insert(mru.begin(), id);
+
+                reg.SetBinaryValue(_T("mru"), mru.data(), (ULONG) mru.size() * sizeof(unsigned char));
 
                 if (ILIsEqual(pidl, spidl))
                 {
