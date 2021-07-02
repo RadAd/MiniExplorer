@@ -39,6 +39,18 @@ CMiniExplorerWnd* GetMiniExplorer(int id)
     return nullptr;
 }
 
+CMiniExplorerWnd* GetMiniExplorer(const ITEMIDLIST_ABSOLUTE* pidl)
+{
+    for (CMiniExplorerWnd* wnd : Registered<CMiniExplorerWnd>::get())
+    {
+        CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+        wnd->GetPidl(&spidl);
+        if (ILIsEqual(spidl, pidl))
+            return wnd;
+    }
+    return nullptr;
+}
+
 int Find(CRegKey& reg, const ITEMIDLIST_ABSOLUTE* pidl, bool& isnew)
 {
     std::set<int> used;
@@ -164,21 +176,24 @@ bool AddMiniExplorer(_In_ int nShowCmd)
     CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl(SHBrowseForFolder(&bi));
     if (spidl)
     {
-        CRegKey reg;
-        reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
-
-        bool isnew = false;
-        const int id = Find(reg, spidl, isnew);
-
-        CMiniExplorerWnd* wnd = GetMiniExplorer(id);
+        CMiniExplorerWnd* wnd = GetMiniExplorer(spidl);
         if (wnd != nullptr)
             SetForegroundWindow(*wnd);
-        else if (isnew)
-            ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
         else
         {
-            std::wstring name = std::to_wstring(id);
-            OpenMiniExplorer(reg, name.c_str(), id, SW_SHOW);
+            CRegKey reg;
+            reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
+
+            bool isnew = false;
+            const int id = Find(reg, spidl, isnew);
+
+            if (isnew)
+                ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
+            else
+            {
+                std::wstring name = std::to_wstring(id);
+                OpenMiniExplorer(reg, name.c_str(), id, SW_SHOW);
+            }
         }
 
         return true;
@@ -187,16 +202,8 @@ bool AddMiniExplorer(_In_ int nShowCmd)
         return false;
 }
 
-void OpenMRU(const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
+void AddMRU(CRegKey& reg, int id)
 {
-    int max = 0;
-    CRegKey reg;
-    reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\MRU"));
-
-    // TODO Window may be open without saving to registry yet
-    bool isnew = false;
-    const int id = Find(reg, pidl, isnew);
-
     std::vector<unsigned char> mru;
     ULONG bytes = 0;
     reg.QueryBinaryValue(_T("mru"), nullptr, &bytes);
@@ -209,16 +216,32 @@ void OpenMRU(const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE 
     // TODO if mru too big then reuse an id
 
     reg.SetBinaryValue(_T("mru"), mru.data(), (ULONG) mru.size() * sizeof(unsigned char));
+}
 
-    CMiniExplorerWnd* wnd = GetMiniExplorer(-id);
+void OpenMRU(const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
+{
+    CRegKey reg;
+    reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\MRU"));
+
+    CMiniExplorerWnd* wnd = GetMiniExplorer(pidl);
     if (wnd != nullptr)
+    {
         SetForegroundWindow(*wnd);
-    else if (isnew)
-        ATLVERIFY(SUCCEEDED(BrowseFolder(-id, pidl, flags, ViewMode, SW_SHOW, nullptr)));
+        AddMRU(reg, -wnd->GetId());
+    }
     else
     {
-        std::wstring name = std::to_wstring(id);
-        OpenMiniExplorer(reg, name.c_str(), -id, SW_SHOW);
+        bool isnew = false;
+        const int id = Find(reg, pidl, isnew);
+
+        AddMRU(reg, id);
+        if (isnew)
+            ATLVERIFY(SUCCEEDED(BrowseFolder(-id, pidl, flags, ViewMode, SW_SHOW, nullptr)));
+        else
+        {
+            std::wstring name = std::to_wstring(id);
+            OpenMiniExplorer(reg, name.c_str(), -id, SW_SHOW);
+        }
     }
 }
 
