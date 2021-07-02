@@ -8,7 +8,6 @@
 // TODO
 // Store and use colours from registry
 // Switching between details and not doesn't show headings
-// Where to store settings for adhoc windows???
 
 #pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
@@ -213,8 +212,6 @@ void AddMRU(CRegKey& reg, int id)
     mru.erase(std::remove(mru.begin(), mru.end(), id), mru.end());
     mru.insert(mru.begin(), id);
 
-    // TODO if mru too big then reuse an id
-
     reg.SetBinaryValue(_T("mru"), mru.data(), (ULONG) mru.size() * sizeof(unsigned char));
 }
 
@@ -233,6 +230,8 @@ void OpenMRU(const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE 
     {
         bool isnew = false;
         const int id = Find(reg, pidl, isnew);
+
+        // TODO if id is big then reuse an id
 
         AddMRU(reg, id);
         if (isnew)

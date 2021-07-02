@@ -134,6 +134,7 @@ public:
             //ATLVERIFY(*ppStrm != nullptr);
             return *ppStrm != nullptr ? S_OK : E_FAIL;
         }
+        else
 #endif
         return E_NOTIMPL;
     }
