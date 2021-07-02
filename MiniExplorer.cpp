@@ -49,9 +49,9 @@ HRESULT BrowseFolder(int id, const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags,
     ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(pShellFolder, &spidl)));
 
     CComPtr<IShellFolder> pFolder;
-    //if (ILIsEqual(pidl, spidl))
-        //pFolder = pShellFolder;
-    //else
+    if (ILIsEqual(pidl, spidl))
+        pFolder = pShellFolder;
+    else
         ATLVERIFY(SUCCEEDED(pShellFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
 
 #if 0
