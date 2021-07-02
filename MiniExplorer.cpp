@@ -49,9 +49,9 @@ HRESULT BrowseFolder(int id, const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags,
     ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(pShellFolder, &spidl)));
 
     CComPtr<IShellFolder> pFolder;
-    if (ILIsEqual(pidl, spidl))
-        pFolder = pShellFolder;
-    else
+    //if (ILIsEqual(pidl, spidl))
+        //pFolder = pShellFolder;
+    //else
         ATLVERIFY(SUCCEEDED(pShellFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
 
 #if 0
@@ -69,7 +69,7 @@ HRESULT BrowseFolder(int id, const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags,
 #endif
 }
 
-void AddMiniExplorer(_In_ int nShowCmd)
+bool AddMiniExplorer(_In_ int nShowCmd)
 {
     BROWSEINFO bi = {};
     bi.lpszTitle = _T("Select a folder to open");
@@ -102,7 +102,7 @@ void AddMiniExplorer(_In_ int nShowCmd)
             if (ILIsEqual(childspidl, spidl))
             {
                 ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
-                return;
+                return true;
             }
         }
 
@@ -111,7 +111,10 @@ void AddMiniExplorer(_In_ int nShowCmd)
             ++newid;
 
         ATLVERIFY(SUCCEEDED(BrowseFolder(newid, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
+        return true;
     }
+    else
+        return false;
 }
 
 class Counter
@@ -717,9 +720,13 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
     LPWSTR* argv = CommandLineToArgvW(lpCmdLine, &argc);
     if (argc > 1 && _wcsicmp(argv[1], _T("/Add")) == 0)
     {
-        AddMiniExplorer(SW_SHOW);
-        CreateJumpList();
-        return true;
+        if (AddMiniExplorer(SW_SHOW))
+        {
+            CreateJumpList();
+            return true;
+        }
+        else
+            return false;
     }
     else if (argc > 1 && _wcsicmp(argv[1], _T("/Remove")) == 0)
     {
