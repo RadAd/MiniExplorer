@@ -3,7 +3,7 @@
 #include <string>
 
 HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, std::wstring name, HICON hIcon, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect);
-void OpenMRU(const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode);
+void OpenMRU(PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode);
 
 template <class T>
 std::set<T*> Registered<T>::s_registry;

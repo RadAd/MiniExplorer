@@ -38,7 +38,7 @@ CMiniExplorerWnd* GetMiniExplorer(int id)
     return nullptr;
 }
 
-CMiniExplorerWnd* GetMiniExplorer(const ITEMIDLIST_ABSOLUTE* pidl)
+CMiniExplorerWnd* GetMiniExplorer(PCUIDLIST_ABSOLUTE pidl)
 {
     for (CMiniExplorerWnd* wnd : Registered<CMiniExplorerWnd>::get())
     {
@@ -50,7 +50,7 @@ CMiniExplorerWnd* GetMiniExplorer(const ITEMIDLIST_ABSOLUTE* pidl)
     return nullptr;
 }
 
-int Find(CRegKey& reg, const ITEMIDLIST_ABSOLUTE* pidl, bool& isnew)
+int Find(CRegKey& reg, PCUIDLIST_ABSOLUTE pidl, bool& isnew)
 {
     std::set<int> used;
     isnew = false;
@@ -97,7 +97,7 @@ HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring na
     return S_OK;
 }
 
-HRESULT BrowseFolder(int id, const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
+HRESULT BrowseFolder(int id, PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
 {
     CComPtr<IShellFolder> pShellFolder;
     ATLVERIFY(SUCCEEDED(SHGetDesktopFolder(&pShellFolder)));
@@ -215,7 +215,7 @@ void AddMRU(CRegKey& reg, int id)
     reg.SetBinaryValue(_T("mru"), mru.data(), (ULONG) mru.size() * sizeof(unsigned char));
 }
 
-void OpenMRU(const ITEMIDLIST_ABSOLUTE* pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
+void OpenMRU(PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
 {
     CRegKey reg;
     reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\MRU"));
