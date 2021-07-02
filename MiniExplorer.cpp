@@ -32,8 +32,6 @@
 #include <set>
 #include <vector>
 
-int s_id = 0;
-
 #define CD_COMMAND_LINE 524
 
 EXTERN_C const GUID DECLSPEC_SELECTANY IID_IShellBrowserService = { 0XDFBC7E30L, 0XF9E5, 0x455F, 0x88, 0xF8, 0xFA, 0x98, 0xC1, 0xE4, 0x94, 0xCA };
@@ -78,7 +76,42 @@ void AddMiniExplorer(_In_ int nShowCmd)
     bi.ulFlags = BIF_EDITBOX | BIF_NEWDIALOGSTYLE | BIF_BROWSEFILEJUNCTIONS;
     CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl(SHBrowseForFolder(&bi));
     if (spidl)
-        ATLVERIFY(SUCCEEDED(BrowseFolder(s_id++, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
+    {
+        std::set<int> used;
+
+        CRegKey reg;
+        reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
+
+        TCHAR name[1024];
+        DWORD szname = 0;
+        DWORD index = 0;
+        while (szname = ARRAYSIZE(name), ERROR_SUCCESS == reg.EnumKey(index++, name, &szname))
+        {
+            int id = std::stoi(name);
+            used.insert(id);
+
+            CRegKey childreg;
+            childreg.Open(reg, name);
+
+            CComHeapPtr<ITEMIDLIST_ABSOLUTE> childspidl;
+            ULONG bytes = 0;
+            childreg.QueryBinaryValue(_T("pidl"), nullptr, &bytes);
+            childspidl.AllocateBytes(bytes);
+            childreg.QueryBinaryValue(_T("pidl"), childspidl, &bytes);
+
+            if (ILIsEqual(childspidl, spidl))
+            {
+                ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
+                return;
+            }
+        }
+
+        int newid = 0;
+        while (used.find(newid) != used.end())
+            ++newid;
+
+        ATLVERIFY(SUCCEEDED(BrowseFolder(newid, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
+    }
 }
 
 class Counter
@@ -733,9 +766,6 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
 
             if (wnd == nullptr)
                 OpenMiniExplorer(reg, name, id, nShowCmd);
-
-            if (s_id <= id)
-                s_id = id + 1;
         }
         _putts(name);
 
