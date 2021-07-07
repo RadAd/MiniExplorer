@@ -201,7 +201,7 @@ bool AddMiniExplorer(_In_ int nShowCmd)
         return false;
 }
 
-void AddMRU(CRegKey& reg, int id)
+int AddMRU(CRegKey& reg, int id)
 {
     std::vector<unsigned char> mru;
     ULONG bytes = 0;
@@ -210,9 +210,17 @@ void AddMRU(CRegKey& reg, int id)
     reg.QueryBinaryValue(_T("mru"), mru.data(), &bytes);
 
     mru.erase(std::remove(mru.begin(), mru.end(), id), mru.end());
+    const int maxsize = 20;
+    if (mru.size() >= maxsize)
+    {
+        id = mru.back();
+        mru.erase(mru.begin() + maxsize - 1, mru.end());
+    }
     mru.insert(mru.begin(), id);
 
     reg.SetBinaryValue(_T("mru"), mru.data(), (ULONG) mru.size() * sizeof(unsigned char));
+
+    return id;
 }
 
 void OpenMRU(PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
@@ -224,16 +232,15 @@ void OpenMRU(PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode
     if (wnd != nullptr)
     {
         SetForegroundWindow(*wnd);
-        AddMRU(reg, -wnd->GetId());
+        const int id = wnd->GetId();
+        if (id < 0)
+            AddMRU(reg, -id);
     }
     else
     {
         bool isnew = false;
-        const int id = Find(reg, pidl, isnew);
+        const int id = AddMRU(reg, Find(reg, pidl, isnew));
 
-        // TODO if id is big then reuse an id
-
-        AddMRU(reg, id);
         if (isnew)
             ATLVERIFY(SUCCEEDED(BrowseFolder(-id, pidl, flags, ViewMode, SW_SHOW, nullptr)));
         else
