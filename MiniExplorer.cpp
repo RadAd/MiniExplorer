@@ -133,7 +133,7 @@ bool OpenMiniExplorer(HKEY hKeyParent, LPCTSTR lpszKeyName, const int id, const 
     CRegKey childreg;
     if (childreg.Open(hKeyParent, lpszKeyName) != ERROR_SUCCESS)
     {
-        MessageBox(NULL, _T("No entry."), _T("Mini Explorer"), MB_ICONERROR | MB_OK);
+        MessageBox(NULL, _T("No entry."), CMiniExplorerWnd::GetWndCaption(), MB_ICONERROR | MB_OK);
         return false;
     }
 
@@ -271,7 +271,8 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
         // Close window if open
         // Delete registry entry
         //CreateJumpList();
-        return true;
+        MessageBox(NULL, _T("Not implemented yet."), CMiniExplorerWnd::GetWndCaption(), MB_ICONWARNING| MB_OK);
+        return false;
     }
     else if (argc > 2 && _wcsicmp(argv[1], _T("/Open")) == 0)
     {
