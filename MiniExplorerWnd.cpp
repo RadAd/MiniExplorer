@@ -388,3 +388,7 @@ void CMiniExplorerWnd::OnSetFocus(CWindow wndOld)
     //::SetFocus(m_hViewWnd);
 }
 
+void CMiniExplorerWnd::OnDpiChanged(UINT nDpiX, UINT nDpiY, PRECT pRect)
+{
+    SetWindowPos(NULL, pRect, SWP_NOZORDER | SWP_NOACTIVATE);
+}

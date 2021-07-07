@@ -57,6 +57,7 @@ public:
         MSG_WM_DESTROY(OnDestroy)
         MSG_WM_SIZE(OnSize)
         MSG_WM_SETFOCUS(OnSetFocus)
+        MSG_WM_DPICHANGED(OnDpiChanged)
     END_MSG_MAP()
 
     int GetId() const
@@ -84,6 +85,7 @@ private:
     void OnDestroy();
     void OnSize(UINT nType, CSize size);
     void OnSetFocus(CWindow wndOld);
+    void OnDpiChanged(UINT nDpiX, UINT nDpiY, PRECT pRect);
 
     int m_id;
     FOLDERFLAGS m_flags;
