@@ -8,6 +8,7 @@
 // TODO
 // Store and use colours from registry
 // Switching between details and not doesn't show headings
+// Add doesn't always update jumplist immediately
 
 #pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
@@ -83,6 +84,43 @@ int Find(CRegKey& reg, PCUIDLIST_ABSOLUTE pidl, bool& isnew)
     while (used.find(newid) != used.end())
         ++newid;
     return newid;
+}
+
+int AddMRU(CRegKey& reg, int id)
+{
+    std::vector<unsigned char> mru;
+    ULONG bytes = 0;
+    reg.QueryBinaryValue(_T("mru"), nullptr, &bytes);
+    mru.resize(bytes / sizeof(unsigned char));
+    reg.QueryBinaryValue(_T("mru"), mru.data(), &bytes);
+
+    mru.erase(std::remove(mru.begin(), mru.end(), id), mru.end());
+    const int maxsize = 20;
+    if (mru.size() >= maxsize)
+    {
+        id = mru.back();
+        mru.erase(mru.begin() + maxsize - 1, mru.end());
+    }
+    mru.insert(mru.begin(), id);
+
+    reg.SetBinaryValue(_T("mru"), mru.data(), (ULONG) mru.size() * sizeof(unsigned char));
+
+    return id;
+}
+
+int DelMRU(CRegKey& reg, int id)
+{
+    std::vector<unsigned char> mru;
+    ULONG bytes = 0;
+    reg.QueryBinaryValue(_T("mru"), nullptr, &bytes);
+    mru.resize(bytes / sizeof(unsigned char));
+    reg.QueryBinaryValue(_T("mru"), mru.data(), &bytes);
+
+    mru.erase(std::remove(mru.begin(), mru.end(), id), mru.end());
+
+    reg.SetBinaryValue(_T("mru"), mru.data(), (ULONG) mru.size() * sizeof(unsigned char));
+
+    return id;
 }
 
 HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring name, HICON hIcon, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
@@ -176,17 +214,24 @@ bool AddMiniExplorer(_In_ int nShowCmd)
     if (spidl)
     {
         CMiniExplorerWnd* wnd = GetMiniExplorer(spidl);
-        if (wnd != nullptr)
+        if (wnd != nullptr && wnd->GetId() >= 0)
+        {
+            // Window is already a favourite
             SetForegroundWindow(*wnd);
+        }
         else
         {
+            // TODO Could check in MRU for existing settings - open window then change its id
+
             CRegKey reg;
             reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
 
             bool isnew = false;
             const int id = Find(reg, spidl, isnew);
 
-            if (isnew)
+            if (wnd != nullptr)
+                wnd->SetId(id);
+            else if (isnew)
                 ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
             else
             {
@@ -199,28 +244,6 @@ bool AddMiniExplorer(_In_ int nShowCmd)
     }
     else
         return false;
-}
-
-int AddMRU(CRegKey& reg, int id)
-{
-    std::vector<unsigned char> mru;
-    ULONG bytes = 0;
-    reg.QueryBinaryValue(_T("mru"), nullptr, &bytes);
-    mru.resize(bytes / sizeof(unsigned char));
-    reg.QueryBinaryValue(_T("mru"), mru.data(), &bytes);
-
-    mru.erase(std::remove(mru.begin(), mru.end(), id), mru.end());
-    const int maxsize = 20;
-    if (mru.size() >= maxsize)
-    {
-        id = mru.back();
-        mru.erase(mru.begin() + maxsize - 1, mru.end());
-    }
-    mru.insert(mru.begin(), id);
-
-    reg.SetBinaryValue(_T("mru"), mru.data(), (ULONG) mru.size() * sizeof(unsigned char));
-
-    return id;
 }
 
 void OpenMRU(PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
@@ -264,15 +287,6 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
         }
         else
             return false;
-    }
-    else if (argc > 1 && _wcsicmp(argv[1], _T("/Remove")) == 0)
-    {
-        // TODO Select an entry
-        // Close window if open
-        // Delete registry entry
-        //CreateJumpList();
-        MessageBox(NULL, _T("Not implemented yet."), CMiniExplorerWnd::GetWndCaption(), MB_ICONWARNING| MB_OK);
-        return false;
     }
     else if (argc > 2 && _wcsicmp(argv[1], _T("/Open")) == 0)
     {

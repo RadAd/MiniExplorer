@@ -6,6 +6,13 @@
 
 #include <Shlobj.h>
 
+#include <string>
+
+#include "MiniExplorerWnd.h"
+
+int Find(CRegKey& reg, PCUIDLIST_ABSOLUTE pidl, bool& isnew);
+CMiniExplorerWnd* GetMiniExplorer(int id);
+
 HRESULT _CreateShellLink(PCWSTR pszArguments, PCWSTR pszTitle, PCWSTR pszIconLocation, int iIcon, IShellLink** ppsl)
 {
     CComPtr<IShellLink> psl;
@@ -71,9 +78,16 @@ HRESULT _AddTasksToList(ICustomDestinationList* pcdl)
     CComPtr<IObjectCollection> poc;
     ATLENSURE_RETURN(SUCCEEDED(poc.CoCreateInstance(CLSID_EnumerableObjectCollection, NULL, CLSCTX_INPROC)));
 
-    ATLVERIFY(SUCCEEDED(_AddShellLink(poc, L"/Add", L"Add Window", nullptr, -1)));
-    ATLVERIFY(SUCCEEDED(_AddShellLink(poc, L"/Remove", L"Remove Window", nullptr, -1)));
-    ATLVERIFY(SUCCEEDED(_AddSeparatorLink(poc)));
+    ATLENSURE_RETURN(SUCCEEDED(_AddShellLink(poc, L"/Add", L"Add Favorite", nullptr, -1)));
+
+    ATLENSURE_RETURN(SUCCEEDED(pcdl->AddUserTasks(poc)));
+    return S_OK;
+}
+
+HRESULT _AddFavoritesToList(ICustomDestinationList* pcdl)
+{
+    CComPtr<IObjectCollection> poc;
+    ATLENSURE_RETURN(SUCCEEDED(poc.CoCreateInstance(CLSID_EnumerableObjectCollection, NULL, CLSCTX_INPROC)));
     {
         CRegKey reg;
         reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
@@ -107,13 +121,48 @@ HRESULT _AddTasksToList(ICustomDestinationList* pcdl)
         }
     }
 
-    CComPtr<IObjectArray> poa;
-    ATLVERIFY(SUCCEEDED(poc.QueryInterface(&poa)));
+    ATLENSURE_RETURN(SUCCEEDED(pcdl->AppendCategory(L"Favorites", poc)));
+    return S_OK;
+}
 
-    // Add the tasks to the Jump List. Tasks always appear in the canonical "Tasks"
-    // category that is displayed at the bottom of the Jump List, after all other
-    // categories.
-    ATLVERIFY(SUCCEEDED(pcdl->AddUserTasks(poa)));
+HRESULT _Remove(IObjectArray* poaRemoved)
+{
+    UINT count = 0;
+    ATLENSURE_RETURN(SUCCEEDED(poaRemoved->GetCount(&count)));
+
+    CRegKey reg;
+    reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
+
+    for (UINT i = 0; i < count; ++i)
+    {
+        CComPtr<IShellLink> psl;
+        ATLVERIFY(SUCCEEDED(poaRemoved->GetAt(i, IID_PPV_ARGS(&psl))));
+
+        WCHAR args[100];
+        psl->GetArguments(args, ARRAYSIZE(args));
+
+        const int offset = 6;
+        if (_wcsnicmp(args, L"/Open ", offset) == 0)
+        {
+            const int id = std::stoi(args + offset);
+            CMiniExplorerWnd* wnd = GetMiniExplorer(id);
+            if (wnd != nullptr)
+            {
+                CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+                wnd->GetPidl(&spidl);
+
+                CRegKey regmru;
+                regmru.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\MRU"));
+
+                bool isnew = false;
+                const int newid = Find(regmru, spidl, isnew);
+
+                wnd->SetId(-newid);
+            }
+
+            reg.RecurseDeleteKey(args + offset);
+        }
+    }
 
     return S_OK;
 }
@@ -123,9 +172,13 @@ void CreateJumpList()
     CComPtr<ICustomDestinationList> pcdl;
     ATLVERIFY(SUCCEEDED(pcdl.CoCreateInstance(CLSID_DestinationList, nullptr, CLSCTX_INPROC_SERVER)));
 
+    //pcdl->SetAppID(L"MiniExplorer.1");
+
     UINT cMinSlots;
     CComPtr<IObjectArray> poaRemoved;
     ATLVERIFY(SUCCEEDED(pcdl->BeginList(&cMinSlots, IID_PPV_ARGS(&poaRemoved))));
+    ATLVERIFY(SUCCEEDED(_Remove(poaRemoved)));
     ATLVERIFY(SUCCEEDED(_AddTasksToList(pcdl)));
+    ATLVERIFY(SUCCEEDED(_AddFavoritesToList(pcdl)));
     ATLVERIFY(SUCCEEDED(pcdl->CommitList()));
 }
