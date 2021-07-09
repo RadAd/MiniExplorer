@@ -50,6 +50,7 @@ public:
         : Registered<CMiniExplorerWnd>(this)
         , m_id(id), m_pShellFolder(pShellFolder), m_flags(flags), m_ViewMode(ViewMode)
     {
+        ATLVERIFY(m_pShellFolder != nullptr);
     }
 
     BEGIN_MSG_MAP(CMiniExplorerWnd)

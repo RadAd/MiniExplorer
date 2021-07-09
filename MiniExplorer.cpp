@@ -8,7 +8,6 @@
 // TODO
 // Store and use colours from registry
 // Switching between details and not doesn't show headings
-// Add doesn't always update jumplist immediately
 
 #pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
@@ -164,12 +163,12 @@ HRESULT BrowseFolder(int id, PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERV
 #endif
 }
 
-bool OpenMiniExplorer(HKEY hKeyParent, LPCTSTR lpszKeyName, const int id, const int nShowCmd)
+bool OpenMiniExplorer(CRegKey& regParent, LPCTSTR lpszKeyName, const int id, const int nShowCmd)
 {
     ATLVERIFY(GetMiniExplorer(id) == nullptr);
 
     CRegKey childreg;
-    if (childreg.Open(hKeyParent, lpszKeyName) != ERROR_SUCCESS)
+    if (childreg.Open(regParent, lpszKeyName) != ERROR_SUCCESS)
     {
         MessageBox(NULL, _T("No entry."), CMiniExplorerWnd::GetWndCaption(), MB_ICONERROR | MB_OK);
         return false;
@@ -200,9 +199,17 @@ bool OpenMiniExplorer(HKEY hKeyParent, LPCTSTR lpszKeyName, const int id, const 
     spidl.AllocateBytes(bytes);
     childreg.QueryBinaryValue(_T("pidl"), spidl, &bytes);
 
-    ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, flags, ViewMode, nShowCmd, &rc)));
-
-    return true;
+    if (bytes == 0)
+    {
+        childreg.Close();
+        regParent.RecurseDeleteKey(lpszKeyName);
+        return false;
+    }
+    else
+    {
+        ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, flags, ViewMode, nShowCmd, &rc)));
+        return true;
+    }
 }
 
 bool AddMiniExplorer(_In_ int nShowCmd)
@@ -232,10 +239,19 @@ bool AddMiniExplorer(_In_ int nShowCmd)
             if (wnd != nullptr)
                 wnd->SetId(id);
             else if (isnew)
+            {
+                const std::wstring name = std::to_wstring(id);
+
+                CRegKey regChild;
+                regChild.Create(reg, name.c_str());
+
+                ATLVERIFY(ERROR_SUCCESS == regChild.SetBinaryValue(_T("pidl"), reinterpret_cast<BYTE*>(static_cast<PIDLIST_ABSOLUTE>(spidl)), ILGetSize(spidl)));
+
                 ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
+            }
             else
             {
-                std::wstring name = std::to_wstring(id);
+                const std::wstring name = std::to_wstring(id);
                 OpenMiniExplorer(reg, name.c_str(), id, SW_SHOW);
             }
         }
@@ -290,6 +306,8 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
     }
     else if (argc > 2 && _wcsicmp(argv[1], _T("/Open")) == 0)
     {
+        CreateJumpList();
+
         const int id = std::stoi(argv[2]);
 
         CMiniExplorerWnd* wnd = GetMiniExplorer(id);
@@ -311,6 +329,8 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
     }
     else if (argc == 1)
     {
+        CreateJumpList();
+
         CRegKey reg;
         reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
 
@@ -395,8 +415,6 @@ public:
 
         if (!::ParseCommandLine(GetCommandLine(), nShowCmd))
             return -1;
-
-        CreateJumpList();
 
         HRESULT hr = __super::PreMessageLoop(nShowCmd);
         if (FAILED(hr))
