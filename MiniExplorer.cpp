@@ -136,6 +136,8 @@ HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring na
 
 HRESULT BrowseFolder(int id, PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
 {
+    ATLASSERT(pidl != nullptr);
+
     CComPtr<IShellFolder> pShellFolder;
     ATLVERIFY(SUCCEEDED(SHGetDesktopFolder(&pShellFolder)));
 
@@ -264,6 +266,8 @@ bool AddMiniExplorer(_In_ int nShowCmd)
 
 void OpenMRU(PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
 {
+    ATLASSERT(pidl != nullptr);
+
     CRegKey reg;
     reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\MRU"));
 
@@ -345,6 +349,18 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
 
             if (wnd == nullptr)
                 OpenMiniExplorer(reg, name, id, nShowCmd);
+        }
+
+        if (Registered<CMiniExplorerWnd>::get().empty())
+        {
+            CComPtr<IShellFolder> pShellFolder;
+            ATLVERIFY(SUCCEEDED(SHGetDesktopFolder(&pShellFolder)));
+
+            CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+            ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(pShellFolder, &spidl)));
+
+            OpenMRU(spidl, FWF_NONE, FVM_AUTO);
+            //ATLVERIFY(SUCCEEDED(BrowseFolder(-1, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
         }
 
         return true;
