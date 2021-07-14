@@ -48,9 +48,6 @@ MiniExplorerSettings GetSettings(IShellView* pShellView)
     return settings;
 }
 
-// TODO Get current settings from folderview
-
-
 template <class T>
 std::set<T*> Registered<T>::s_registry;
 
@@ -139,19 +136,19 @@ public:
             {
                 const MiniExplorerSettings settings = GetSettings(m_pShellView);
 
-                if ((wFlags & 0xF000) == SBSP_ABSOLUTE)
-                {
-                    OpenMRU(pidl, settings);
-                }
-                else if ((wFlags & 0xF000) == SBSP_RELATIVE)
+                if (wFlags & SBSP_RELATIVE)
                 {
                     CComPtr<IShellFolder> pFolder;
-                    // TODO get name and hIcon
-                    std::wstring name;
-                    HICON hIcon = NULL;
                     ATLVERIFY(SUCCEEDED(m_pFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
-                    // TODO Find the appropriate id
-                    ATLVERIFY(SUCCEEDED(BrowseFolder(-100, pFolder, name, hIcon, settings, SW_SHOW, nullptr)));
+
+                    CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+                    ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(pFolder, &spidl)));
+
+                    OpenMRU(spidl, settings);
+                }
+                else /* SBSP_ABSOLUTE */
+                {
+                    OpenMRU(pidl, settings);
                 }
             }
 
@@ -362,7 +359,6 @@ void CMiniExplorerWnd::OnDestroy()
         ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("bottom"), rc.bottom));
         ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("right"), rc.right));
 
-        // TODO May be better to use m_pShellView->SaveViewState()
         m_pShellView->SaveViewState();
 
         const MiniExplorerSettings settings = GetSettings(m_pShellView);
