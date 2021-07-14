@@ -131,10 +131,9 @@ int DelMRU(CRegKey& reg, int id)
 HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring name, HICON hIcon, const MiniExplorerSettings& settings, _In_ int nShowCmd, RECT* pRect)
 {
     // TODO Put flags, ViewMode in create params
-    CMiniExplorerWnd* mainwnd = new CMiniExplorerWnd(id, pShellFolder, settings);
-    if (!mainwnd->Create(s_MainWnd, pRect))
+    CMiniExplorerWnd* mainwnd = new CMiniExplorerWnd(id, pShellFolder);
+    if (!mainwnd->Create(s_MainWnd, pRect, (name + L" - " + CMiniExplorerWnd::GetWndCaption()).c_str(), 0, 0, 0U, const_cast<MiniExplorerSettings*>(&settings)))
         return AtlHresultFromWin32(GetLastError());
-    mainwnd->SetWindowText((name + L" - " + CMiniExplorerWnd::GetWndCaption()).c_str());
     mainwnd->SetIcon(hIcon);
     mainwnd->ShowWindow(nShowCmd);
     return S_OK;

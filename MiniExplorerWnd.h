@@ -53,9 +53,9 @@ public:
         return _T("Mini Explorer");
     }
 
-    CMiniExplorerWnd(int id, CComPtr<IShellFolder> pShellFolder, const MiniExplorerSettings& settings)
+    CMiniExplorerWnd(int id, CComPtr<IShellFolder> pShellFolder)
         : Registered<CMiniExplorerWnd>(this)
-        , m_id(id), m_pShellFolder(pShellFolder), m_settings(settings)
+        , m_id(id), m_pShellFolder(pShellFolder)
     {
         ATLVERIFY(m_pShellFolder != nullptr);
     }
@@ -101,7 +101,6 @@ private:
     void OnDpiChanged(UINT nDpiX, UINT nDpiY, PRECT pRect);
 
     int m_id;
-    MiniExplorerSettings m_settings;
     CComPtr<IShellFolder> m_pShellFolder;
     CComPtr<IShellView> m_pShellView;
 

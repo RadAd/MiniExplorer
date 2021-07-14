@@ -235,6 +235,8 @@ private:
 
 int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
+    const MiniExplorerSettings* pSettings = static_cast<MiniExplorerSettings*>(lpCreateStruct->lpCreateParams);
+
     CRect rc;
     GetClientRect(rc);
 
@@ -266,14 +268,14 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     CComPtr<IShellView3> m_pShellView3;
     if (SUCCEEDED(m_pShellView.QueryInterface(&m_pShellView3)))
     {
-        ATLVERIFY(SUCCEEDED(m_pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), m_settings.flags, m_settings.ViewMode, nullptr, rc, &m_hViewWnd)));
+        ATLVERIFY(SUCCEEDED(m_pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), pSettings->flags, pSettings->ViewMode, nullptr, rc, &m_hViewWnd)));
     }
     // else TODO Implement IShellView2
     else
     {
         FOLDERSETTINGS fs = {};
-        fs.ViewMode = m_settings.ViewMode;
-        fs.fFlags = m_settings.flags;  // https://docs.microsoft.com/en-gb/windows/win32/api/shobjidl_core/ne-shobjidl_core-folderflags
+        fs.ViewMode = pSettings->ViewMode;
+        fs.fFlags = pSettings->flags;  // https://docs.microsoft.com/en-gb/windows/win32/api/shobjidl_core/ne-shobjidl_core-folderflags
         ATLVERIFY(SUCCEEDED(m_pShellView->CreateViewWindow(nullptr, &fs, m_pShellBrowser, rc, &m_hViewWnd)));
     }
 
@@ -282,15 +284,15 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 
     if (SUCCEEDED(m_pShellView.QueryInterface(&pFolderView2)))
     {
-        //ATLVERIFY(SUCCEEDED(pFolderView2->SetCurrentFolderFlags(static_cast<FOLDERFLAGS>(-1), m_settings.flags)));
-        if (m_settings.iIconSize > 0)
-            ATLVERIFY(SUCCEEDED(pFolderView2->SetViewModeAndIconSize(m_settings.ViewMode, m_settings.iIconSize)));
+        //ATLVERIFY(SUCCEEDED(pFolderView2->SetCurrentFolderFlags(static_cast<FOLDERFLAGS>(-1), pSettings->flags)));
+        if (pSettings->iIconSize > 0)
+            ATLVERIFY(SUCCEEDED(pFolderView2->SetViewModeAndIconSize(pSettings->ViewMode, pSettings->iIconSize)));
         // TODO Set sort columns
     }
 #if 0
     else if (SUCCEEDED(m_pShellView.QueryInterface(&pFolderView)))
     {
-        //ATLVERIFY(SUCCEEDED(pFolderView->SetCurrentViewMode(m_settings.ViewMode)));
+        //ATLVERIFY(SUCCEEDED(pFolderView->SetCurrentViewMode(pSettings->ViewMode)));
     }
 #endif
 
