@@ -108,6 +108,9 @@ private:
     CComPtr<IExplorerBrowser> m_pExplorerBrowser;
 #else
     CComPtr<IShellBrowser> m_pShellBrowser;
-    HWND m_hViewWnd = NULL;
+    CWindow m_hViewWnd;
 #endif
+
+    CComPtr<DShellFolderViewEvents> m_pEvents;
+    DWORD m_dwCookie;
 };

@@ -1,5 +1,7 @@
 #include "MiniExplorerWnd.h"
 
+#include <shdispid.h>
+
 #include <string>
 
 HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, std::wstring name, HICON hIcon, const MiniExplorerSettings& settings, _In_ int nShowCmd, RECT* pRect);
@@ -46,6 +48,21 @@ MiniExplorerSettings GetSettings(IShellView* pShellView)
     }
 
     return settings;
+}
+
+void FixListViewHeader(HWND hViewWnd)
+{
+    CWindow hListView = FindWindowEx(hViewWnd, NULL, WC_LISTVIEW, nullptr);
+    if (hListView)
+    {
+        // ListView isn't correctly removing the header when not in details mode
+        LONG style = hListView.GetWindowLong(GWL_STYLE);
+        if (ListView_GetView(hListView) != LV_VIEW_DETAILS)
+            style |= LVS_NOCOLUMNHEADER;
+        else
+            style &= ~LVS_NOCOLUMNHEADER;
+        hListView.SetWindowLong(GWL_STYLE, style);
+    }
 }
 
 template <class T>
@@ -230,6 +247,48 @@ private:
     IShellView* m_pShellView = nullptr;
 };
 
+class CShellFolderViewEvents :
+    public CComObjectRootEx<ATL::CComSingleThreadModel>,
+    public IDispatchImpl<DShellFolderViewEvents>
+{
+    BEGIN_COM_MAP(CShellFolderViewEvents)
+        COM_INTERFACE_ENTRY(DShellFolderViewEvents)
+        COM_INTERFACE_ENTRY(IDispatch)
+        COM_INTERFACE_ENTRY(IUnknown)
+    END_COM_MAP()
+
+public:
+    void Init(HWND hViewWnd)
+    {
+        m_hViewWnd = hViewWnd;
+    }
+
+    // DShellFolderViewEvents
+
+    STDMETHOD(Invoke)(
+        _In_  DISPID dispIdMember,
+        _In_  REFIID riid,
+        _In_  LCID lcid,
+        _In_  WORD wFlags,
+        _In_  DISPPARAMS* pDispParams,
+        _Out_opt_  VARIANT* pVarResult,
+        _Out_opt_  EXCEPINFO* pExcepInfo,
+        _Out_opt_  UINT* puArgErr) override
+    {
+        switch (dispIdMember)
+        {
+        case DISPID_VIEWMODECHANGED:
+            FixListViewHeader(m_hViewWnd);
+            break;
+        }
+        return S_OK;
+        //return IDispatchImpl<DShellFolderViewEvents>::Invoke(dispIdMember, riid, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
+    }
+
+private:
+    HWND m_hViewWnd;
+};
+
 int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
     const MiniExplorerSettings* pSettings = static_cast<MiniExplorerSettings*>(lpCreateStruct->lpCreateParams);
@@ -265,7 +324,9 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     CComPtr<IShellView3> m_pShellView3;
     if (SUCCEEDED(m_pShellView.QueryInterface(&m_pShellView3)))
     {
-        ATLVERIFY(SUCCEEDED(m_pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), pSettings->flags, pSettings->ViewMode, nullptr, rc, &m_hViewWnd)));
+        HWND hViewWnd;
+        ATLVERIFY(SUCCEEDED(m_pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), pSettings->flags, pSettings->ViewMode, nullptr, rc, &hViewWnd)));
+        m_hViewWnd = hViewWnd;
     }
     // else TODO Implement IShellView2
     else
@@ -273,8 +334,11 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
         FOLDERSETTINGS fs = {};
         fs.ViewMode = pSettings->ViewMode;
         fs.fFlags = pSettings->flags;  // https://docs.microsoft.com/en-gb/windows/win32/api/shobjidl_core/ne-shobjidl_core-folderflags
-        ATLVERIFY(SUCCEEDED(m_pShellView->CreateViewWindow(nullptr, &fs, m_pShellBrowser, rc, &m_hViewWnd)));
+        HWND hViewWnd;
+        ATLVERIFY(SUCCEEDED(m_pShellView->CreateViewWindow(nullptr, &fs, m_pShellBrowser, rc, &hViewWnd)));
+        m_hViewWnd = hViewWnd;
     }
+    FixListViewHeader(m_hViewWnd);
 
     //CComPtr<IFolderView> pFolderView;
     CComPtr<IFolderView2> pFolderView2;
@@ -329,6 +393,15 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&pDropTarget)));
     ATLVERIFY(SUCCEEDED(RegisterDragDrop(m_hWnd, pDropTarget)));
 
+    CComPtr<IDispatch> viewDisp;
+    ATLVERIFY(SUCCEEDED(m_pShellView->GetItemObject(SVGIO_BACKGROUND, IID_PPV_ARGS(&viewDisp))));
+
+    CComObject<CShellFolderViewEvents>* pEvents;
+    ATLVERIFY(SUCCEEDED(CComObject<CShellFolderViewEvents>::CreateInstance(&pEvents)));
+    pEvents->Init(m_hViewWnd);
+    m_pEvents = pEvents;
+    ATLVERIFY(SUCCEEDED(AtlAdvise(viewDisp, m_pEvents, __uuidof(DShellFolderViewEvents), &m_dwCookie)));
+
     return 0;
 }
 
@@ -382,42 +455,15 @@ void CMiniExplorerWnd::OnSize(UINT nType, CSize size)
 #ifdef USE_EXPLORER_BROWSER
     m_pExplorerBrowser->SetRect(NULL, rc);
 #else
-    if (m_hViewWnd != NULL)
-    {
-        HWND hListView = FindWindowEx(m_hViewWnd, NULL, WC_LISTVIEW, nullptr);
-        if (hListView != NULL)
-        {
-            // ListView isn't correctly removing the header when not in details mode
-            // TODO Need a way to detect when mode changes
-            if (true)
-            {
-                LONG style = ::GetWindowLong(hListView, GWL_STYLE);
-                if (ListView_GetView(hListView) != LV_VIEW_DETAILS)
-                    style |= LVS_NOCOLUMNHEADER;
-                else
-                    style &= ~LVS_NOCOLUMNHEADER;
-                ::SetWindowLong(hListView, GWL_STYLE, style);
-            }
-            else if (ListView_GetView(hListView) != LV_VIEW_DETAILS)
-            {
-                HWND hHeader = ListView_GetHeader(hListView);
-                if (hHeader != NULL)
-                {
-                    CRect wrc;
-                    ::GetWindowRect(hHeader, wrc);
-                    rc.top -= wrc.Height();
-                }
-            }
-        }
-        ::SetWindowPos(m_hViewWnd, NULL, rc.left, rc.top, rc.Width(), rc.Height(), SWP_NOZORDER);
-    }
+    if (m_hViewWnd)
+        m_hViewWnd.SetWindowPos(NULL, rc.left, rc.top, rc.Width(), rc.Height(), SWP_NOZORDER);
 #endif
 }
 
 void CMiniExplorerWnd::OnSetFocus(CWindow wndOld)
 {
     m_pShellView->UIActivate(SVUIA_ACTIVATE_FOCUS);
-    //::SetFocus(m_hViewWnd);
+    //m_hViewWnd.SetFocus();
 }
 
 void CMiniExplorerWnd::OnDpiChanged(UINT nDpiX, UINT nDpiY, PRECT pRect)
