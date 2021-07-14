@@ -321,11 +321,11 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     pCom->Init(m_hWnd, m_id, m_pShellFolder);
     m_pShellBrowser = pCom;
 
-    CComPtr<IShellView3> m_pShellView3;
-    if (SUCCEEDED(m_pShellView.QueryInterface(&m_pShellView3)))
+    CComQIPtr<IShellView3> pShellView3(m_pShellView);
+    if (pShellView3)
     {
         HWND hViewWnd;
-        ATLVERIFY(SUCCEEDED(m_pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), pSettings->flags, pSettings->ViewMode, nullptr, rc, &hViewWnd)));
+        ATLVERIFY(SUCCEEDED(pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), pSettings->flags, pSettings->ViewMode, nullptr, rc, &hViewWnd)));
         m_hViewWnd = hViewWnd;
     }
     // else TODO Implement IShellView2
@@ -340,10 +340,10 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     }
     FixListViewHeader(m_hViewWnd);
 
-    //CComPtr<IFolderView> pFolderView;
-    CComPtr<IFolderView2> pFolderView2;
+    //CComQIPtr<IFolderView> pFolderView(m_pShellView);
+    CComQIPtr<IFolderView2> pFolderView2(m_pShellView);
 
-    if (SUCCEEDED(m_pShellView.QueryInterface(&pFolderView2)))
+    if (pFolderView2)
     {
         //ATLVERIFY(SUCCEEDED(pFolderView2->SetCurrentFolderFlags(static_cast<FOLDERFLAGS>(-1), pSettings->flags)));
         if (pSettings->iIconSize > 0)
@@ -351,7 +351,7 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
         // TODO Set sort columns
     }
 #if 0
-    else if (SUCCEEDED(m_pShellView.QueryInterface(&pFolderView)))
+    else if (pFolderView)
     {
         //ATLVERIFY(SUCCEEDED(pFolderView->SetCurrentViewMode(pSettings->ViewMode)));
     }
@@ -361,9 +361,8 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 
     HWND hListView = FindWindowEx(m_hViewWnd, NULL, WC_LISTVIEW, nullptr);
 
-    CComPtr <IVisualProperties> pVisualProperties;
-    ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&pVisualProperties)));
-    if (pVisualProperties != nullptr)
+    CComQIPtr<IVisualProperties> pVisualProperties(m_pShellView);
+    if (pVisualProperties)
     {
         if (true)
         {
@@ -389,8 +388,8 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     }
 #endif
 
-    CComPtr<IDropTarget> pDropTarget;
-    ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&pDropTarget)));
+    CComQIPtr<IDropTarget> pDropTarget(m_pShellView);
+    ATLVERIFY(pDropTarget);
     ATLVERIFY(SUCCEEDED(RegisterDragDrop(m_hWnd, pDropTarget)));
 
     CComPtr<IDispatch> viewDisp;
@@ -400,6 +399,7 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     ATLVERIFY(SUCCEEDED(CComObject<CShellFolderViewEvents>::CreateInstance(&pEvents)));
     pEvents->Init(m_hViewWnd);
     m_pEvents = pEvents;
+
     ATLVERIFY(SUCCEEDED(AtlAdvise(viewDisp, m_pEvents, __uuidof(DShellFolderViewEvents), &m_dwCookie)));
 
     return 0;
@@ -408,6 +408,8 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 void CMiniExplorerWnd::OnDestroy()
 {
     ATLVERIFY(SUCCEEDED(RevokeDragDrop(m_hWnd)));
+
+    ATLVERIFY(SUCCEEDED(AtlUnadvise(m_pEvents, __uuidof(DShellFolderViewEvents), m_dwCookie)));
 
     if (true)
     {

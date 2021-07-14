@@ -418,14 +418,14 @@ public:
     {
         SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-        HWND hWnd = FindWindow(CMainWnd::GetWndClassInfo().m_wc.lpszClassName, nullptr);
-        if (hWnd != NULL)
+        CWindow hWnd = FindWindow(CMainWnd::GetWndClassInfo().m_wc.lpszClassName, nullptr);
+        if (hWnd)
         {
             COPYDATASTRUCT cds;
             cds.dwData = CD_COMMAND_LINE;
             cds.lpData = GetCommandLine();
             cds.cbData = (DWORD) (_tcslen(GetCommandLine()) + 1) * sizeof(TCHAR);
-            ::SendMessage(hWnd, WM_COPYDATA, NULL, (LPARAM) &cds);
+            hWnd.SendMessage(WM_COPYDATA, NULL, (LPARAM) &cds);
             return S_FALSE;
         }
 
