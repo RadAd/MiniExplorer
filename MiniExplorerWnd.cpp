@@ -2,8 +2,54 @@
 
 #include <string>
 
-HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, std::wstring name, HICON hIcon, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect);
-void OpenMRU(PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode);
+HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, std::wstring name, HICON hIcon, const MiniExplorerSettings& settings, _In_ int nShowCmd, RECT* pRect);
+void OpenMRU(PCUIDLIST_ABSOLUTE pidl, const MiniExplorerSettings& settings);
+
+MiniExplorerSettings GetSettings(IShellView* pShellView)
+{
+    MiniExplorerSettings settings = {};
+    settings.ViewMode = FVM_AUTO;
+    settings.flags = FWF_NONE;
+
+    if (pShellView != nullptr)
+    {
+        //CComQIPtr<IFolderView> pFolderView(pShellView);
+        CComQIPtr<IFolderView2> pFolderView2(pShellView);
+
+        if (pFolderView2)
+        {
+            ATLVERIFY(SUCCEEDED(pFolderView2->GetViewModeAndIconSize(&settings.ViewMode, &settings.iIconSize)));
+
+            DWORD FolderFlags;
+            ATLVERIFY(SUCCEEDED(pFolderView2->GetCurrentFolderFlags(&FolderFlags)));
+            settings.flags = static_cast<FOLDERFLAGS>(FolderFlags);
+        }
+#if 0
+        else if (pFolderView)
+        {
+            UINT ViewMode = 0;
+            ATLVERIFY(SUCCEEDED(pFolderView->GetCurrentViewMode(&ViewMode)));
+            settings.ViewMode = static_cast<FOLDERVIEWMODE>(ViewMode);
+
+            // TODO Missing flags
+        }
+#endif
+        else
+        {
+            FOLDERSETTINGS fs = {};
+            fs.ViewMode = FVM_AUTO;
+            fs.fFlags = FWF_NONE;
+            ATLVERIFY(SUCCEEDED(pShellView->GetCurrentInfo(&fs)));
+            settings.ViewMode = static_cast<FOLDERVIEWMODE>(fs.ViewMode);
+            settings.flags = static_cast<FOLDERFLAGS>(fs.fFlags);
+        }
+    }
+
+    return settings;
+}
+
+// TODO Get current settings from folderview
+
 
 template <class T>
 std::set<T*> Registered<T>::s_registry;
@@ -91,15 +137,11 @@ public:
         {
             if (pidl != nullptr)
             {
-                FOLDERSETTINGS fs = {};
-                fs.ViewMode = FVM_AUTO;
-                fs.fFlags = FWF_NONE;
-                if (m_pShellView != nullptr)
-                    ATLVERIFY(SUCCEEDED(m_pShellView->GetCurrentInfo(&fs)));
+                const MiniExplorerSettings settings = GetSettings(m_pShellView);
 
                 if ((wFlags & 0xF000) == SBSP_ABSOLUTE)
                 {
-                    OpenMRU(pidl, (FOLDERFLAGS) fs.fFlags, (FOLDERVIEWMODE) fs.ViewMode);
+                    OpenMRU(pidl, settings);
                 }
                 else if ((wFlags & 0xF000) == SBSP_RELATIVE)
                 {
@@ -109,7 +151,7 @@ public:
                     HICON hIcon = NULL;
                     ATLVERIFY(SUCCEEDED(m_pFolder->BindToObject(pidl, 0, IID_PPV_ARGS(&pFolder))));
                     // TODO Find the appropriate id
-                    ATLVERIFY(SUCCEEDED(BrowseFolder(-100, pFolder, name, hIcon, (FOLDERFLAGS) fs.fFlags, (FOLDERVIEWMODE) fs.ViewMode, SW_SHOW, nullptr)));
+                    ATLVERIFY(SUCCEEDED(BrowseFolder(-100, pFolder, name, hIcon, settings, SW_SHOW, nullptr)));
                 }
             }
 
@@ -193,10 +235,6 @@ private:
 
 int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
-    FOLDERSETTINGS fs = {};
-    fs.ViewMode = m_ViewMode;
-    fs.fFlags = m_flags;  // https://docs.microsoft.com/en-gb/windows/win32/api/shobjidl_core/ne-shobjidl_core-folderflags
-
     CRect rc;
     GetClientRect(rc);
 
@@ -228,24 +266,35 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     CComPtr<IShellView3> m_pShellView3;
     if (SUCCEEDED(m_pShellView.QueryInterface(&m_pShellView3)))
     {
-        ATLVERIFY(SUCCEEDED(m_pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), m_flags, m_ViewMode, nullptr, rc, &m_hViewWnd)));
+        ATLVERIFY(SUCCEEDED(m_pShellView3->CreateViewWindow3(m_pShellBrowser, nullptr, SV3CVW3_FORCEFOLDERFLAGS | SV3CVW3_FORCEVIEWMODE, static_cast<FOLDERFLAGS>(-1), m_settings.flags, m_settings.ViewMode, nullptr, rc, &m_hViewWnd)));
     }
     // else TODO Implement IShellView2
     else
     {
+        FOLDERSETTINGS fs = {};
+        fs.ViewMode = m_settings.ViewMode;
+        fs.fFlags = m_settings.flags;  // https://docs.microsoft.com/en-gb/windows/win32/api/shobjidl_core/ne-shobjidl_core-folderflags
         ATLVERIFY(SUCCEEDED(m_pShellView->CreateViewWindow(nullptr, &fs, m_pShellBrowser, rc, &m_hViewWnd)));
     }
 
-#if 0
-    CComPtr<IFolderView> m_pFolderView;
-    ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&m_pFolderView)));
+    //CComPtr<IFolderView> pFolderView;
+    CComPtr<IFolderView2> pFolderView2;
 
-    ATLVERIFY(SUCCEEDED(m_pFolderView->SetCurrentViewMode(fs.ViewMode)));
+    if (SUCCEEDED(m_pShellView.QueryInterface(&pFolderView2)))
+    {
+        //ATLVERIFY(SUCCEEDED(pFolderView2->SetCurrentFolderFlags(static_cast<FOLDERFLAGS>(-1), m_settings.flags)));
+        if (m_settings.iIconSize > 0)
+            ATLVERIFY(SUCCEEDED(pFolderView2->SetViewModeAndIconSize(m_settings.ViewMode, m_settings.iIconSize)));
+        // TODO Set sort columns
+    }
+#if 0
+    else if (SUCCEEDED(m_pShellView.QueryInterface(&pFolderView)))
+    {
+        //ATLVERIFY(SUCCEEDED(pFolderView->SetCurrentViewMode(m_settings.ViewMode)));
+    }
 #endif
 
     ATLVERIFY(SUCCEEDED(m_pShellView->UIActivate(SVUIA_ACTIVATE_NOFOCUS)));
-
-    //ATLVERIFY(SUCCEEDED(m_pFolderView->SetCurrentViewMode(fs.ViewMode)));
 
     HWND hListView = FindWindowEx(m_hViewWnd, NULL, WC_LISTVIEW, nullptr);
 
@@ -314,26 +363,11 @@ void CMiniExplorerWnd::OnDestroy()
         // TODO May be better to use m_pShellView->SaveViewState()
         m_pShellView->SaveViewState();
 
-        if (true)
-        {
-            FOLDERSETTINGS fs = {};
-            ATLVERIFY(SUCCEEDED(m_pShellView->GetCurrentInfo(&fs)));
+        const MiniExplorerSettings settings = GetSettings(m_pShellView);
 
-            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("view"), fs.ViewMode));
-            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("flags"), fs.fFlags));
-        }
-        else if (false)
-        {
-            CComPtr<IFolderView> m_pFolderView;
-            ATLVERIFY(SUCCEEDED(m_pShellView.QueryInterface(&m_pFolderView)));
-
-            UINT viewmode = 0;
-            ATLVERIFY(SUCCEEDED(m_pFolderView->GetCurrentViewMode(&viewmode)));
-
-            ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("view"), viewmode));
-
-            // TODO Use IFolderView2 to get more settings
-        }
+        ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("view"), settings.ViewMode));
+        ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("flags"), settings.flags));
+        ATLVERIFY(ERROR_SUCCESS == reg.SetDWORDValue(_T("iconsize"), settings.iIconSize));
     }
 
 #ifdef USE_EXPLORER_BROWSER

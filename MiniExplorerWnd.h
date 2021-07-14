@@ -37,6 +37,13 @@ private:
 
 typedef CWinTraits<WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES | WS_EX_APPWINDOW /*| WS_EX_TOOLWINDOW*/>		CMiniExplorerTraits;
 
+struct MiniExplorerSettings
+{
+    FOLDERVIEWMODE ViewMode;
+    FOLDERFLAGS flags;
+    int iIconSize;
+};
+
 class CMiniExplorerWnd : public CWindowImpl<CMiniExplorerWnd, CWindow, CMiniExplorerTraits>,
     public Registered<CMiniExplorerWnd>
 {
@@ -46,9 +53,9 @@ public:
         return _T("Mini Explorer");
     }
 
-    CMiniExplorerWnd(int id, CComPtr<IShellFolder> pShellFolder, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
+    CMiniExplorerWnd(int id, CComPtr<IShellFolder> pShellFolder, const MiniExplorerSettings& settings)
         : Registered<CMiniExplorerWnd>(this)
-        , m_id(id), m_pShellFolder(pShellFolder), m_flags(flags), m_ViewMode(ViewMode)
+        , m_id(id), m_pShellFolder(pShellFolder), m_settings(settings)
     {
         ATLVERIFY(m_pShellFolder != nullptr);
     }
@@ -94,8 +101,7 @@ private:
     void OnDpiChanged(UINT nDpiX, UINT nDpiY, PRECT pRect);
 
     int m_id;
-    FOLDERFLAGS m_flags;
-    FOLDERVIEWMODE m_ViewMode;
+    MiniExplorerSettings m_settings;
     CComPtr<IShellFolder> m_pShellFolder;
     CComPtr<IShellView> m_pShellView;
 

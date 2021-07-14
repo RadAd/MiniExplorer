@@ -28,6 +28,12 @@ HWND s_MainWnd = NULL;
 
 void CreateJumpList();
 
+DWORD QueryDWORDValue(CRegKey& reg, _In_opt_z_ LPCTSTR pszValueName, DWORD def)
+{
+    ATLVERIFY(ERROR_SUCCESS == reg.QueryDWORDValue(pszValueName, def));
+    return def;
+}
+
 CMiniExplorerWnd* GetMiniExplorer(int id)
 {
     for (CMiniExplorerWnd* wnd : Registered<CMiniExplorerWnd>::get())
@@ -122,10 +128,10 @@ int DelMRU(CRegKey& reg, int id)
     return id;
 }
 
-HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring name, HICON hIcon, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
+HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring name, HICON hIcon, const MiniExplorerSettings& settings, _In_ int nShowCmd, RECT* pRect)
 {
     // TODO Put flags, ViewMode in create params
-    CMiniExplorerWnd* mainwnd = new CMiniExplorerWnd(id, pShellFolder, flags, ViewMode);
+    CMiniExplorerWnd* mainwnd = new CMiniExplorerWnd(id, pShellFolder, settings);
     if (!mainwnd->Create(s_MainWnd, pRect))
         return AtlHresultFromWin32(GetLastError());
     mainwnd->SetWindowText((name + L" - " + CMiniExplorerWnd::GetWndCaption()).c_str());
@@ -134,7 +140,7 @@ HRESULT BrowseFolder(int id, CComPtr<IShellFolder> pShellFolder, std::wstring na
     return S_OK;
 }
 
-HRESULT BrowseFolder(int id, PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode, _In_ int nShowCmd, RECT* pRect)
+HRESULT BrowseFolder(int id, PCUIDLIST_ABSOLUTE pidl, const MiniExplorerSettings& settings, _In_ int nShowCmd, RECT* pRect)
 {
     ATLASSERT(pidl != nullptr);
 
@@ -161,7 +167,7 @@ HRESULT BrowseFolder(int id, PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERV
     SHFILEINFO sfi = {};
     SHGetFileInfo(reinterpret_cast<LPCTSTR>(pidl), 0, &sfi, sizeof(sfi), SHGFI_PIDL | SHGFI_DISPLAYNAME | SHGFI_ICON);
 
-    return BrowseFolder(id, pFolder, sfi.szDisplayName, sfi.hIcon, flags, ViewMode, nShowCmd, pRect);
+    return BrowseFolder(id, pFolder, sfi.szDisplayName, sfi.hIcon, settings, nShowCmd, pRect);
 #endif
 }
 
@@ -176,24 +182,19 @@ bool OpenMiniExplorer(CRegKey& regParent, LPCTSTR lpszKeyName, const int id, con
         return false;
     }
 
-    DWORD temp;
-
     CRect rc = CMiniExplorerWnd::rcDefault;
-    ATLVERIFY(ERROR_SUCCESS == childreg.QueryDWORDValue(_T("top"), temp));
-    rc.top = temp;
-    ATLVERIFY(ERROR_SUCCESS == childreg.QueryDWORDValue(_T("left"), temp));
-    rc.left = temp;
-    ATLVERIFY(ERROR_SUCCESS == childreg.QueryDWORDValue(_T("bottom"), temp));
-    rc.bottom = temp;
-    ATLVERIFY(ERROR_SUCCESS == childreg.QueryDWORDValue(_T("right"), temp));
-    rc.right = temp;
+    rc.top = QueryDWORDValue(childreg, _T("top"), rc.top);
+    rc.left = QueryDWORDValue(childreg, _T("left"), rc.left);
+    rc.bottom = QueryDWORDValue(childreg, _T("bottom"), rc.bottom);
+    rc.right = QueryDWORDValue(childreg, _T("right"), rc.right);
 
-    FOLDERVIEWMODE ViewMode = FVM_AUTO;
-    ATLVERIFY(ERROR_SUCCESS == childreg.QueryDWORDValue(_T("view"), temp));
-    ViewMode = static_cast<FOLDERVIEWMODE>(temp);
-    FOLDERFLAGS flags = FWF_NONE;
-    ATLVERIFY(ERROR_SUCCESS == childreg.QueryDWORDValue(_T("flags"), temp));
-    flags = static_cast<FOLDERFLAGS>(temp);
+    MiniExplorerSettings settings = {};
+    settings.ViewMode = FVM_AUTO;
+    settings.flags = FWF_NONE;
+
+    settings.ViewMode = static_cast<FOLDERVIEWMODE>(QueryDWORDValue(childreg, _T("view"), settings.ViewMode));
+    settings.flags = static_cast<FOLDERFLAGS>(QueryDWORDValue(childreg, _T("flags"), settings.flags));
+    settings.iIconSize = static_cast<int>(QueryDWORDValue(childreg, _T("iconsize"), settings.iIconSize));
 
     CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
     ULONG bytes = 0;
@@ -209,7 +210,7 @@ bool OpenMiniExplorer(CRegKey& regParent, LPCTSTR lpszKeyName, const int id, con
     }
     else
     {
-        ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, flags, ViewMode, nShowCmd, &rc)));
+        ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, settings, nShowCmd, &rc)));
         return true;
     }
 }
@@ -249,7 +250,10 @@ bool AddMiniExplorer(_In_ int nShowCmd)
 
                 ATLVERIFY(ERROR_SUCCESS == regChild.SetBinaryValue(_T("pidl"), reinterpret_cast<BYTE*>(static_cast<PIDLIST_ABSOLUTE>(spidl)), ILGetSize(spidl)));
 
-                ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
+                MiniExplorerSettings settings = {};
+                settings.ViewMode = FVM_AUTO;
+                settings.flags = FWF_NONE;
+                ATLVERIFY(SUCCEEDED(BrowseFolder(id, spidl, settings, nShowCmd, nullptr)));
             }
             else
             {
@@ -264,7 +268,7 @@ bool AddMiniExplorer(_In_ int nShowCmd)
         return false;
 }
 
-void OpenMRU(PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode)
+void OpenMRU(PCUIDLIST_ABSOLUTE pidl, const MiniExplorerSettings& settings)
 {
     ATLASSERT(pidl != nullptr);
 
@@ -285,7 +289,9 @@ void OpenMRU(PCUIDLIST_ABSOLUTE pidl, FOLDERFLAGS flags, FOLDERVIEWMODE ViewMode
         const int id = AddMRU(reg, Find(reg, pidl, isnew));
 
         if (isnew)
-            ATLVERIFY(SUCCEEDED(BrowseFolder(-id, pidl, flags, ViewMode, SW_SHOW, nullptr)));
+        {
+            ATLVERIFY(SUCCEEDED(BrowseFolder(-id, pidl, settings, SW_SHOW, nullptr)));
+        }
         else
         {
             std::wstring name = std::to_wstring(id);
@@ -359,8 +365,10 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
             CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
             ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(pShellFolder, &spidl)));
 
-            OpenMRU(spidl, FWF_NONE, FVM_AUTO);
-            //ATLVERIFY(SUCCEEDED(BrowseFolder(-1, spidl, FWF_NONE, FVM_AUTO, nShowCmd, nullptr)));
+            MiniExplorerSettings settings = {};
+            settings.ViewMode = FVM_AUTO;
+            settings.flags = FWF_NONE;
+            OpenMRU(spidl, settings);
         }
 
         return true;
