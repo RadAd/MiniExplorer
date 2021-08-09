@@ -2,7 +2,7 @@
 <img src="res/MiniExplorer.ico" width=32/> MiniExplorer
 ==========
 
-A small explorer window
+A small explorer window without all the fluff
 
 ![Windows](https://img.shields.io/badge/platform-Windows-blue.svg)
 [![Releases](https://img.shields.io/github/release/RadAd/MiniExplorer.svg)](https://github.com/RadAd/MiniExplorer/releases/latest)
