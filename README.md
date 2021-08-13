@@ -12,6 +12,6 @@ A small explorer window without all the fluff
 
 Build
 =======
-```
+```bat
 msbuild MiniExplorer.vcxproj -p:Configuration=Release -p:Platform=x64
 ```
