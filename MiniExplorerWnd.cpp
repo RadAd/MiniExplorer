@@ -409,7 +409,10 @@ void CMiniExplorerWnd::OnDestroy()
 {
     ATLVERIFY(SUCCEEDED(RevokeDragDrop(m_hWnd)));
 
-    ATLVERIFY(SUCCEEDED(AtlUnadvise(m_pEvents, __uuidof(DShellFolderViewEvents), m_dwCookie)));
+    CComPtr<IDispatch> viewDisp;
+    ATLVERIFY(SUCCEEDED(m_pShellView->GetItemObject(SVGIO_BACKGROUND, IID_PPV_ARGS(&viewDisp))));
+
+    ATLVERIFY(SUCCEEDED(AtlUnadvise(viewDisp, __uuidof(DShellFolderViewEvents), m_dwCookie)));
 
     if (true)
     {
