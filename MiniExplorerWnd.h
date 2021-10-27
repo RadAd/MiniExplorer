@@ -56,6 +56,7 @@ public:
     CMiniExplorerWnd(int id, CComPtr<IShellFolder> pShellFolder)
         : Registered<CMiniExplorerWnd>(this)
         , m_id(id), m_pShellFolder(pShellFolder)
+        , m_dwCookie(0)
     {
         ATLVERIFY(m_pShellFolder != nullptr);
     }
@@ -66,6 +67,7 @@ public:
         MSG_WM_SIZE(OnSize)
         MSG_WM_SETFOCUS(OnSetFocus)
         MSG_WM_DPICHANGED(OnDpiChanged)
+        MSG_WM_SYSCOMMAND(OnSysCommand)
     END_MSG_MAP()
 
     int GetId() const
@@ -99,6 +101,7 @@ private:
     void OnSize(UINT nType, CSize size);
     void OnSetFocus(CWindow wndOld);
     void OnDpiChanged(UINT nDpiX, UINT nDpiY, PRECT pRect);
+    void OnSysCommand(UINT nID, CPoint point);
 
     int m_id;
     CComPtr<IShellFolder> m_pShellFolder;

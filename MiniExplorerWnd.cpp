@@ -1,8 +1,21 @@
 #include "MiniExplorerWnd.h"
 
 #include <shdispid.h>
+#include <propvarutil.h>
 
 #include <string>
+
+#include "Trace.h"
+
+std::wstring StringFromCLSID(REFCLSID rclsid)
+{
+    CComHeapPtr<OLECHAR> lpsz;
+    ATLVERIFY(SUCCEEDED(::StringFromCLSID(rclsid, &lpsz)));
+    return static_cast<const OLECHAR*>(lpsz);
+}
+
+#define SM_OPEN_IN_EXPLORER 1234
+#define SM_OPEN_UP 1235
 
 HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, std::wstring name, HICON hIcon, const MiniExplorerSettings& settings, _In_ int nShowCmd, RECT* pRect);
 void OpenMRU(PCUIDLIST_ABSOLUTE pidl, const MiniExplorerSettings& settings);
@@ -93,6 +106,7 @@ public:
     STDMETHOD(GetWindow)(
         /* [out] */ __RPC__deref_out_opt HWND* phwnd) override
     {
+        TRACE(__FUNCTIONW__ _T(" %p\n"), phwnd);
         if (!phwnd)
             return E_INVALIDARG;
 
@@ -103,6 +117,7 @@ public:
     STDMETHOD(ContextSensitiveHelp)(
         /* [in] */ BOOL fEnterMode) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         return E_NOTIMPL;
     }
 
@@ -111,42 +126,49 @@ public:
     STDMETHOD(InsertMenusSB)(
         _In_ HMENU hmenuShared, _Inout_ LPOLEMENUGROUPWIDTHS lpMenuWidths) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         return E_NOTIMPL;
     }
 
     STDMETHOD(SetMenuSB)(
         _In_opt_ HMENU hmenuShared, _In_opt_ HOLEMENU holemenuRes, _In_opt_ HWND hwndActiveObject) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         return E_NOTIMPL;
     }
 
     STDMETHOD(RemoveMenusSB)(
         _In_ HMENU hmenuShared) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         return E_NOTIMPL;
     }
 
     STDMETHOD(SetStatusTextSB)(
         _In_opt_ LPCWSTR pszStatusText) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         return E_NOTIMPL;
     }
 
     STDMETHOD(EnableModelessSB)(
         BOOL fEnable) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         return S_OK;
     }
 
     STDMETHOD(TranslateAcceleratorSB)(
         _In_ MSG* pmsg, WORD wID) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         return E_NOTIMPL;
     }
 
     STDMETHOD(BrowseObject)(
         _In_opt_ PCUIDLIST_RELATIVE pidl, UINT wFlags) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         if (!(GetKeyState(VK_SHIFT) & 0x8000))
         {
             if (pidl != nullptr)
@@ -178,6 +200,7 @@ public:
     STDMETHOD(GetViewStateStream)(
         DWORD grfMode, _Out_ IStream** ppStrm) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
 #if 1
         if (ppStrm != nullptr)
         {
@@ -198,6 +221,7 @@ public:
     STDMETHOD(GetControlWindow)(
         UINT id, _Out_opt_ HWND* phwnd) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         if (phwnd != nullptr)
             *phwnd = NULL;
         return S_OK;
@@ -206,12 +230,14 @@ public:
     STDMETHOD(SendControlMsg)(
         _In_  UINT id, _In_  UINT uMsg, _In_  WPARAM wParam, _In_  LPARAM lParam, _Out_opt_  LRESULT* pret) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         return E_NOTIMPL;
     }
 
     STDMETHOD(QueryActiveShellView)(
         _Out_ IShellView** ppshv) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         if (ppshv != nullptr)
             *ppshv = m_pShellView;
         return S_OK;
@@ -220,6 +246,7 @@ public:
     STDMETHOD(OnViewWindowActive)(
         _In_ IShellView* pshv) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         m_pShellView = pshv;
         return S_OK;
     }
@@ -227,6 +254,7 @@ public:
     STDMETHOD(SetToolbarItems)(
         _In_ LPTBBUTTONSB lpButtons, _In_  UINT nButtons, _In_  UINT uFlags) override
     {
+        TRACE(__FUNCTIONW__ _T(" \n"));
         return E_NOTIMPL;
     }
 
@@ -237,6 +265,7 @@ public:
         _In_ REFIID riid,
         _Outptr_ void __RPC_FAR* __RPC_FAR* ppvObject) override
     {
+        TRACE(__FUNCTIONW__ _T(" %s %s\n"), StringFromCLSID(guidService).c_str(), StringFromCLSID(riid).c_str());
         return QueryInterface(riid, ppvObject);
     }
 
@@ -275,6 +304,7 @@ public:
         _Out_opt_  EXCEPINFO* pExcepInfo,
         _Out_opt_  UINT* puArgErr) override
     {
+        TRACE(__FUNCTIONW__ _T(" %d \n"), dispIdMember);
         switch (dispIdMember)
         {
         case DISPID_VIEWMODECHANGED:
@@ -286,11 +316,12 @@ public:
     }
 
 private:
-    HWND m_hViewWnd;
+    HWND m_hViewWnd = NULL;
 };
 
 int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
+    TRACE(__FUNCTIONW__ _T(" \n"));
     const MiniExplorerSettings* pSettings = static_cast<MiniExplorerSettings*>(lpCreateStruct->lpCreateParams);
 
     CRect rc;
@@ -402,11 +433,20 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 
     ATLVERIFY(SUCCEEDED(AtlAdvise(viewDisp, m_pEvents, __uuidof(DShellFolderViewEvents), &m_dwCookie)));
 
+    CMenuHandle hMenu = GetSystemMenu(FALSE);
+    if (hMenu)
+    {
+        hMenu.AppendMenu(MF_SEPARATOR);
+        hMenu.AppendMenu(MF_STRING, SM_OPEN_IN_EXPLORER, _T("Open in Explorer..."));
+        hMenu.AppendMenu(MF_STRING, SM_OPEN_UP, _T("Up..."));
+    }
+
     return 0;
 }
 
 void CMiniExplorerWnd::OnDestroy()
 {
+    TRACE(__FUNCTIONW__ _T(" \n"));
     ATLVERIFY(SUCCEEDED(RevokeDragDrop(m_hWnd)));
 
     CComPtr<IDispatch> viewDisp;
@@ -456,6 +496,7 @@ void CMiniExplorerWnd::OnDestroy()
 
 void CMiniExplorerWnd::OnSize(UINT nType, CSize size)
 {
+    TRACE(__FUNCTIONW__ _T(" \n"));
     CRect rc(0, 0, size.cx, size.cy);
 #ifdef USE_EXPLORER_BROWSER
     m_pExplorerBrowser->SetRect(NULL, rc);
@@ -467,11 +508,93 @@ void CMiniExplorerWnd::OnSize(UINT nType, CSize size)
 
 void CMiniExplorerWnd::OnSetFocus(CWindow wndOld)
 {
+    TRACE(__FUNCTIONW__ _T(" \n"));
     m_pShellView->UIActivate(SVUIA_ACTIVATE_FOCUS);
     //m_hViewWnd.SetFocus();
 }
 
 void CMiniExplorerWnd::OnDpiChanged(UINT nDpiX, UINT nDpiY, PRECT pRect)
 {
+    TRACE(__FUNCTIONW__ _T(" \n"));
     SetWindowPos(NULL, pRect, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void CMiniExplorerWnd::OnSysCommand(UINT nID, CPoint point)
+{
+    TRACE(__FUNCTIONW__ _T(" \n"));
+    switch (nID)
+    {
+    case SM_OPEN_IN_EXPLORER:
+        {
+            CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+            ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(m_pShellFolder, &spidl)));
+
+#if 0
+            CComHeapPtr<WCHAR> name;
+            ATLVERIFY(SUCCEEDED(SHGetNameFromIDList(spidl, SIGDN_FILESYSPATH, &name)));
+
+            // %SystemRoot%\Explorer.exe /e,::{MyExtension CLSID},objectname
+
+            STARTUPINFO startup_info = {};
+            startup_info.cb = sizeof(STARTUPINFO);
+            PROCESS_INFORMATION process_info = {};
+
+            WCHAR cmd[1024];
+            //wsprintf(cmd, L"%SystemRoot%\Explorer.exe /e,::{MyExtension CLSID},objectname", );
+            wsprintf(cmd, L"Explorer.exe \"%s\"", static_cast<const OLECHAR*>(name));
+
+            BOOL rv = ::CreateProcess(
+                NULL,                // LPCTSTR lpApplicationName
+                cmd,                 // LPTSTR lpCommandLine
+                NULL,                // LPSECURITY_ATTRIBUTES lpProcessAttributes
+                NULL,                // LPSECURITY_ATTRIBUTES lpThreadAttributes
+                FALSE,               // BOOL bInheritHandles
+                0,                   // DWORD dwCreationFlags
+                NULL,                // LPVOID lpEnvironment
+                NULL,                // LPCTSTR lpCurrentDirectory
+                &startup_info,       // LPSTARTUPINFO lpStartupInfo
+                &process_info        // LPPROCESS_INFORMATION lpProcessInformation
+            );
+
+            if (rv)
+            {
+                ::CloseHandle(process_info.hThread);
+                ::CloseHandle(process_info.hProcess);
+            }
+            else
+            {
+            }
+#else
+            CComPtr<IWebBrowser2> pwb;
+            ATLVERIFY(SUCCEEDED(pwb.CoCreateInstance(CLSID_ShellBrowserWindow, nullptr, CLSCTX_LOCAL_SERVER)));
+
+            ATLVERIFY(SUCCEEDED(CoAllowSetForegroundWindow(pwb, 0)));
+
+            CComVariant varTarget;
+            ATLVERIFY(SUCCEEDED(InitVariantFromBuffer(spidl, ILGetSize(spidl), &varTarget)));
+
+            CComVariant vEmpty;
+            ATLVERIFY(SUCCEEDED(pwb->Navigate2(&varTarget, &vEmpty, &vEmpty, &vEmpty, &vEmpty)));
+            ATLVERIFY(SUCCEEDED(pwb->put_Visible(VARIANT_TRUE)));
+#endif
+        }
+        break;
+
+    case SM_OPEN_UP:
+        {
+            CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+            ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(m_pShellFolder, &spidl)));
+
+            if (ILRemoveLastID(spidl))
+            {
+                const MiniExplorerSettings settings = GetSettings(m_pShellView);
+                OpenMRU(spidl, settings);
+            }
+        }
+        break;
+
+    default:
+        SetMsgHandled(FALSE);
+        break;
+    }
 }

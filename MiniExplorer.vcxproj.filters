@@ -14,6 +14,8 @@
   <ItemGroup>
     <ClInclude Include="resource.h" />
     <ClInclude Include="MiniExplorerWnd.h" />
+    <ClInclude Include="Format.h" />
+    <ClInclude Include="Trace.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="MiniExplorer.rc">
