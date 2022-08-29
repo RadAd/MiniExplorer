@@ -334,6 +334,38 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
 
         return true;
     }
+    else if (argc == 2)
+    {
+        LPWSTR directory = argv[1];
+
+        // Fix name - if you entered the trailing slash followed by a quote
+        // it gets interpreted as just a quote ie '"C:\"' becomes 'C:"'
+        // If that happens we just remove the trailing quote
+        size_t len = wcslen(directory);
+        if (directory[len - 1] == _T('"'))
+            directory[len - 1] = _T('\0');
+
+        CComPtr<IShellFolder> pShellFolder;
+        ATLVERIFY(SUCCEEDED(SHGetDesktopFolder(&pShellFolder)));
+
+        CComQIPtr<IBindCtx> pBindCtx(pShellFolder);
+        CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+        ATLVERIFY(SUCCEEDED(pShellFolder->ParseDisplayName(NULL, pBindCtx, directory, nullptr, &spidl, nullptr)));
+
+        if (!spidl)
+        {
+            MessageBox(NULL, _T("Error parsing name."), CMiniExplorerWnd::GetWndCaption(), MB_ICONERROR | MB_OK);
+        }
+        else
+        {
+            MiniExplorerSettings settings = {};
+            settings.ViewMode = FVM_AUTO;
+            settings.flags = FWF_NONE;
+            OpenMRU(spidl, settings);
+        }
+
+        return true;
+    }
     else if (argc == 1)
     {
         CreateJumpList();
