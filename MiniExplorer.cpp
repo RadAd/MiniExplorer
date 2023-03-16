@@ -265,6 +265,31 @@ bool AddMiniExplorer(_In_ int nShowCmd)
         return false;
 }
 
+bool OpenFavourite(PCUIDLIST_ABSOLUTE pidl)
+{
+    ATLASSERT(pidl != nullptr);
+
+    CRegKey reg;
+    reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
+
+    bool isnew = false;
+    const int id = Find(reg, pidl, isnew);
+    if (isnew)
+        return false;
+
+    CMiniExplorerWnd* wnd = GetMiniExplorer(id);
+    if (wnd != nullptr)
+    {
+        SetForegroundWindow(*wnd);
+        return true;
+    }
+    else
+    {
+        std::wstring name = std::to_wstring(id);
+        return OpenMiniExplorer(reg, name.c_str(), id, SW_SHOW);
+    }
+}
+
 void OpenMRU(PCUIDLIST_ABSOLUTE pidl, const MiniExplorerSettings& settings)
 {
     ATLASSERT(pidl != nullptr);
@@ -287,6 +312,12 @@ void OpenMRU(PCUIDLIST_ABSOLUTE pidl, const MiniExplorerSettings& settings)
 
         if (isnew)
         {
+            TCHAR keyname[1024];
+            _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\MRU\\%d"), id);
+
+            CRegKey regwnd;
+            ATLVERIFY(ERROR_SUCCESS == regwnd.Create(HKEY_CURRENT_USER, keyname));
+            ATLVERIFY(ERROR_SUCCESS == regwnd.SetBinaryValue(_T("pidl"), reinterpret_cast<const BYTE*>(pidl), ILGetSize(pidl)));
             ATLVERIFY(SUCCEEDED(BrowseFolder(-id, pidl, settings, SW_SHOW, nullptr)));
         }
         else
@@ -358,10 +389,13 @@ bool ParseCommandLine(_In_ PCWSTR lpCmdLine, _In_ int nShowCmd)
         }
         else
         {
-            MiniExplorerSettings settings = {};
-            settings.ViewMode = FVM_AUTO;
-            settings.flags = FWF_NONE;
-            OpenMRU(spidl, settings);
+            if (!OpenFavourite(spidl))
+            {
+                MiniExplorerSettings settings = {};
+                settings.ViewMode = FVM_AUTO;
+                settings.flags = FWF_NONE;
+                OpenMRU(spidl, settings);
+            }
         }
 
         return true;

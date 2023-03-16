@@ -75,10 +75,7 @@ public:
         return m_id;
     }
 
-    void SetId(int id)
-    {
-        m_id = id;
-    }
+    void SetId(int id);
 
     void GetPidl(_Outptr_ PIDLIST_ABSOLUTE* ppidl) const
     {

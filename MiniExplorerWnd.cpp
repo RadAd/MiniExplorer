@@ -14,11 +14,15 @@ std::wstring StringFromCLSID(REFCLSID rclsid)
     return static_cast<const OLECHAR*>(lpsz);
 }
 
+#define SM_FAVOURITE 1236
 #define SM_OPEN_IN_EXPLORER 1234
 #define SM_OPEN_UP 1235
 
+int Find(CRegKey& reg, PCUIDLIST_ABSOLUTE pidl, bool& isnew);
 HRESULT BrowseFolder(int id, CComPtr<IShellFolder> Child, std::wstring name, HICON hIcon, const MiniExplorerSettings& settings, _In_ int nShowCmd, RECT* pRect);
+bool OpenFavourite(PCUIDLIST_ABSOLUTE pidl);
 void OpenMRU(PCUIDLIST_ABSOLUTE pidl, const MiniExplorerSettings& settings);
+void CreateJumpList();
 
 MiniExplorerSettings GetSettings(IShellView* pShellView)
 {
@@ -183,11 +187,13 @@ public:
                     CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
                     ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(pFolder, &spidl)));
 
-                    OpenMRU(spidl, settings);
+                    if (!OpenFavourite(spidl))
+                        OpenMRU(spidl, settings);
                 }
                 else /* SBSP_ABSOLUTE */
                 {
-                    OpenMRU(pidl, settings);
+                    if (!OpenFavourite(pidl))
+                        OpenMRU(pidl, settings);
                 }
             }
 
@@ -319,6 +325,13 @@ private:
     HWND m_hViewWnd = NULL;
 };
 
+void CMiniExplorerWnd::SetId(int id)
+{
+    m_id = id;
+    static_cast<CShellBrowser*>(static_cast<IShellBrowser*>(m_pShellBrowser))->Init(m_hWnd, m_id, m_pShellFolder);
+}
+
+
 int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
     TRACE(__FUNCTIONW__ _T(" \n"));
@@ -437,8 +450,11 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     if (hMenu)
     {
         hMenu.AppendMenu(MF_SEPARATOR);
+        hMenu.AppendMenu(MF_STRING, SM_FAVOURITE, _T("Favourite"));
         hMenu.AppendMenu(MF_STRING, SM_OPEN_IN_EXPLORER, _T("Open in Explorer..."));
         hMenu.AppendMenu(MF_STRING, SM_OPEN_UP, _T("Up..."));
+
+        hMenu.CheckMenuItem(SM_FAVOURITE, MF_BYCOMMAND | (GetId() >= 0 ? MF_CHECKED : MF_UNCHECKED));
     }
 
     return 0;
@@ -524,6 +540,68 @@ void CMiniExplorerWnd::OnSysCommand(UINT nID, CPoint point)
     TRACE(__FUNCTIONW__ _T(" \n"));
     switch (nID)
     {
+    case SM_FAVOURITE:
+        if (GetId() >= 0)
+        {
+            // TODO Remove from favourites
+            TCHAR keyname[1024];
+            _stprintf_s(keyname, _T("%d"), m_id);
+
+            {
+                CRegKey reg;
+                reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
+                reg.DeleteSubKey(keyname);
+            }
+
+            CRegKey reg;
+            reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\MRU"));
+            
+            CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+            GetPidl(&spidl);
+
+            bool isnew = false;
+            const int id = Find(reg, spidl, isnew);
+
+            SetId(-id);
+
+            if (isnew)
+            {
+                _stprintf_s(keyname, _T("%d"), id);
+                CRegKey regwnd;
+                ATLVERIFY(ERROR_SUCCESS == regwnd.Create(reg, keyname));
+                ATLVERIFY(ERROR_SUCCESS == regwnd.SetBinaryValue(_T("pidl"), reinterpret_cast<BYTE*>(static_cast<PIDLIST_ABSOLUTE>(spidl)), ILGetSize(spidl)));
+            }
+        }
+        else
+        {
+            CRegKey reg;
+            reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
+
+            CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
+            GetPidl(&spidl);
+
+            bool isnew = false;
+            const int id = Find(reg, spidl, isnew);
+            ATLASSERT(isnew);
+
+            SetId(id);
+
+            TCHAR keyname[1024];
+            _stprintf_s(keyname, _T("%d"), m_id);
+
+            CRegKey regwnd;
+            ATLVERIFY(ERROR_SUCCESS == regwnd.Create(reg, keyname));
+            ATLVERIFY(ERROR_SUCCESS == regwnd.SetBinaryValue(_T("pidl"), reinterpret_cast<BYTE*>(static_cast<PIDLIST_ABSOLUTE>(spidl)), ILGetSize(spidl)));
+        }
+
+        {
+            CreateJumpList();
+            CMenuHandle hMenu = GetSystemMenu(FALSE);
+            if (hMenu)
+                hMenu.CheckMenuItem(SM_FAVOURITE, MF_BYCOMMAND | (GetId() >= 0 ? MF_CHECKED : MF_UNCHECKED));
+        }
+        break;
+
     case SM_OPEN_IN_EXPLORER:
         {
             CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
@@ -588,7 +666,8 @@ void CMiniExplorerWnd::OnSysCommand(UINT nID, CPoint point)
             if (ILRemoveLastID(spidl))
             {
                 const MiniExplorerSettings settings = GetSettings(m_pShellView);
-                OpenMRU(spidl, settings);
+                if (!OpenFavourite(spidl))
+                    OpenMRU(spidl, settings);
             }
         }
         break;
