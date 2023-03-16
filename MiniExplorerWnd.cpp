@@ -449,6 +449,7 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     CMenuHandle hMenu = GetSystemMenu(FALSE);
     if (hMenu)
     {
+        // TODO Shell_MergeMenus(hMenu, hMenuMerge, )
         hMenu.AppendMenu(MF_SEPARATOR);
         hMenu.AppendMenu(MF_STRING, SM_FAVOURITE, _T("Favourite"));
         hMenu.AppendMenu(MF_STRING, SM_OPEN_IN_EXPLORER, _T("Open in Explorer..."));
