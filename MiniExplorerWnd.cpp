@@ -410,11 +410,11 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     {
         if (true)
         {
-            ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_TEXT, RGB(255, 255, 255))));
+            ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_TEXT, RGB(250, 250, 250))));
             ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_BACKGROUND, RGB(0, 0, 0))));
             ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_SORTCOLUMN, RGB(25, 25, 25))));
-            ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_SUBTEXT, RGB(200, 200, 2000))));
-            ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_TEXTBACKGROUND, RGB(255, 0, 0))));    // TODO Not sure what this is?
+            ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_SUBTEXT, RGB(100, 100, 100))));
+            ATLVERIFY(SUCCEEDED(pVisualProperties->SetColor(VPCF_TEXTBACKGROUND, RGB(255, 0, 255))));    // TODO Not sure what this is?
         }
         else
         {
@@ -424,9 +424,9 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     else if (hListView != NULL)
     {
         ListView_SetBkColor(hListView, RGB(0, 0, 0));
-        ListView_SetTextColor(hListView, RGB(255, 255, 255));
-        ListView_SetTextBkColor(hListView, RGB(0, 0, 0));
-        ListView_SetOutlineColor(hListView, RGB(255, 0, 0));    // TODO Not sure what this is?
+        ListView_SetTextColor(hListView, RGB(250, 250, 250));
+        ListView_SetTextBkColor(hListView, RGB(61, 61, 61));
+        ListView_SetOutlineColor(hListView, RGB(255, 0, 255));    // TODO Not sure what this is?
 
         //ListView_SetView(hListView, LV_VIEW_SMALLICON);
     }
