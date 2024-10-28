@@ -9,6 +9,7 @@
 #include <string>
 
 #include "MiniExplorerWnd.h"
+#include "Format.h"
 
 int Find(CRegKey& reg, PCUIDLIST_ABSOLUTE pidl, bool& isnew);
 CMiniExplorerWnd* GetMiniExplorer(int id);
@@ -101,9 +102,6 @@ HRESULT _AddFavoritesToList(ICustomDestinationList* pcdl)
                 CRegKey childreg;
                 childreg.Open(reg, name);
 
-                TCHAR cmd[1024];
-                _stprintf_s(cmd, _T("/Open %s"), name);
-
                 CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
                 ULONG bytes = 0;
                 childreg.QueryBinaryValue(_T("pidl"), nullptr, &bytes);
@@ -116,7 +114,7 @@ HRESULT _AddFavoritesToList(ICustomDestinationList* pcdl)
                 SHFILEINFO sfi = {};
                 SHGetFileInfoW(reinterpret_cast<LPCWSTR>(static_cast<ITEMIDLIST_ABSOLUTE*>(spidl)), 0, &sfi, sizeof(sfi), SHGFI_PIDL | SHGFI_ICONLOCATION);
 
-                ATLVERIFY(SUCCEEDED(_AddShellLink(poc, cmd, folder_name, sfi.szDisplayName, sfi.iIcon)));
+                ATLVERIFY(SUCCEEDED(_AddShellLink(poc, Format(_T("/Open %s"), name).c_str(), folder_name, sfi.szDisplayName, sfi.iIcon)));
             }
         }
     }

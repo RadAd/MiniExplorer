@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "MiniExplorerWnd.h"
+#include "Format.h"
 
 #define CD_COMMAND_LINE 524
 
@@ -312,11 +313,8 @@ void OpenMRU(PCUIDLIST_ABSOLUTE pidl, const MiniExplorerSettings& settings)
 
         if (isnew)
         {
-            TCHAR keyname[1024];
-            _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\MRU\\%d"), id);
-
             CRegKey regwnd;
-            ATLVERIFY(ERROR_SUCCESS == regwnd.Create(HKEY_CURRENT_USER, keyname));
+            ATLVERIFY(ERROR_SUCCESS == regwnd.Create(HKEY_CURRENT_USER, Format(_T("Software\\RadSoft\\MiniExplorer\\MRU\\%d"), id).c_str()));
             ATLVERIFY(ERROR_SUCCESS == regwnd.SetBinaryValue(_T("pidl"), reinterpret_cast<const BYTE*>(pidl), ILGetSize(pidl)));
             ATLVERIFY(SUCCEEDED(BrowseFolder(-id, pidl, settings, SW_SHOW, nullptr)));
         }

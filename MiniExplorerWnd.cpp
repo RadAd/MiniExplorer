@@ -276,12 +276,10 @@ public:
 #if 1
         if (ppStrm != nullptr)
         {
-            TCHAR keyname[1024];
-            if (m_id >= 0)
-                _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\Windows\\%d"), m_id);
-            else
-                _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\MRU\\%d"), -m_id);
-            *ppStrm = SHOpenRegStream2(HKEY_CURRENT_USER, keyname, _T("state"), grfMode);
+            const std::wstring keyname =  m_id >= 0
+                ? Format(_T("Software\\RadSoft\\MiniExplorer\\Windows\\%d"), m_id)
+                : Format(_T("Software\\RadSoft\\MiniExplorer\\MRU\\%d"), -m_id);
+            *ppStrm = SHOpenRegStream2(HKEY_CURRENT_USER, keyname.c_str(), _T("state"), grfMode);
             //ATLVERIFY(*ppStrm != nullptr);
             return *ppStrm != nullptr ? S_OK : E_FAIL;
         }
@@ -541,14 +539,12 @@ void CMiniExplorerWnd::OnDestroy()
 
     if (true)
     {
-        TCHAR keyname[1024];
-        if (m_id >= 0)
-            _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\Windows\\%d"), m_id);
-        else
-            _stprintf_s(keyname, _T("Software\\RadSoft\\MiniExplorer\\MRU\\%d"), -m_id);
+        const std::wstring keyname = m_id >= 0
+            ? Format(_T("Software\\RadSoft\\MiniExplorer\\Windows\\%d"), m_id)
+            : Format(_T("Software\\RadSoft\\MiniExplorer\\MRU\\%d"), -m_id);
 
         CRegKey reg;
-        ATLVERIFY(ERROR_SUCCESS == reg.Create(HKEY_CURRENT_USER, keyname));
+        ATLVERIFY(ERROR_SUCCESS == reg.Create(HKEY_CURRENT_USER, keyname.c_str()));
 
         CComHeapPtr<ITEMIDLIST_ABSOLUTE> spidl;
         ATLVERIFY(SUCCEEDED(SHGetIDListFromObject(m_pShellFolder, &spidl)));
@@ -623,13 +619,10 @@ void CMiniExplorerWnd::OnSysCommand(UINT nID, CPoint point)
         if (GetId() >= 0)
         {
             // TODO Remove from favourites
-            TCHAR keyname[1024];
-            _stprintf_s(keyname, _T("%d"), m_id);
-
             {
                 CRegKey reg;
                 reg.Create(HKEY_CURRENT_USER, _T("Software\\RadSoft\\MiniExplorer\\Windows"));
-                reg.DeleteSubKey(keyname);
+                reg.DeleteSubKey(Format(_T("%d"), m_id).c_str());
             }
 
             CRegKey reg;
@@ -645,9 +638,8 @@ void CMiniExplorerWnd::OnSysCommand(UINT nID, CPoint point)
 
             if (isnew)
             {
-                _stprintf_s(keyname, _T("%d"), id);
                 CRegKey regwnd;
-                ATLVERIFY(ERROR_SUCCESS == regwnd.Create(reg, keyname));
+                ATLVERIFY(ERROR_SUCCESS == regwnd.Create(reg, Format(_T("%d"), id).c_str()));
                 ATLVERIFY(ERROR_SUCCESS == regwnd.SetBinaryValue(_T("pidl"), reinterpret_cast<BYTE*>(static_cast<PIDLIST_ABSOLUTE>(spidl)), ILGetSize(spidl)));
             }
         }
@@ -665,11 +657,8 @@ void CMiniExplorerWnd::OnSysCommand(UINT nID, CPoint point)
 
             SetId(id);
 
-            TCHAR keyname[1024];
-            _stprintf_s(keyname, _T("%d"), m_id);
-
             CRegKey regwnd;
-            ATLVERIFY(ERROR_SUCCESS == regwnd.Create(reg, keyname));
+            ATLVERIFY(ERROR_SUCCESS == regwnd.Create(reg, Format(_T("%d"), m_id).c_str()));
             ATLVERIFY(ERROR_SUCCESS == regwnd.SetBinaryValue(_T("pidl"), reinterpret_cast<BYTE*>(static_cast<PIDLIST_ABSOLUTE>(spidl)), ILGetSize(spidl)));
         }
 
