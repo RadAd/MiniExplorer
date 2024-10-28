@@ -14,6 +14,72 @@ std::wstring StringFromCLSID(REFCLSID rclsid)
     return static_cast<const OLECHAR*>(lpsz);
 }
 
+inline void SetWindowBlur(HWND hWnd, bool bEnabled)
+{
+    const HINSTANCE hModule = GetModuleHandle(TEXT("user32.dll"));
+    if (hModule)
+    {
+        typedef enum _ACCENT_STATE {
+            ACCENT_DISABLED,
+            ACCENT_ENABLE_GRADIENT,
+            ACCENT_ENABLE_TRANSPARENTGRADIENT,
+            ACCENT_ENABLE_BLURBEHIND,
+            ACCENT_ENABLE_ACRYLICBLURBEHIND,
+            ACCENT_INVALID_STATE
+        } ACCENT_STATE;
+        struct ACCENTPOLICY
+        {
+            ACCENT_STATE nAccentState;
+            DWORD nFlags;
+            DWORD nColor;
+            DWORD nAnimationId;
+        };
+        typedef enum _WINDOWCOMPOSITIONATTRIB {
+            WCA_UNDEFINED = 0,
+            WCA_NCRENDERING_ENABLED = 1,
+            WCA_NCRENDERING_POLICY = 2,
+            WCA_TRANSITIONS_FORCEDISABLED = 3,
+            WCA_ALLOW_NCPAINT = 4,
+            WCA_CAPTION_BUTTON_BOUNDS = 5,
+            WCA_NONCLIENT_RTL_LAYOUT = 6,
+            WCA_FORCE_ICONIC_REPRESENTATION = 7,
+            WCA_EXTENDED_FRAME_BOUNDS = 8,
+            WCA_HAS_ICONIC_BITMAP = 9,
+            WCA_THEME_ATTRIBUTES = 10,
+            WCA_NCRENDERING_EXILED = 11,
+            WCA_NCADORNMENTINFO = 12,
+            WCA_EXCLUDED_FROM_LIVEPREVIEW = 13,
+            WCA_VIDEO_OVERLAY_ACTIVE = 14,
+            WCA_FORCE_ACTIVEWINDOW_APPEARANCE = 15,
+            WCA_DISALLOW_PEEK = 16,
+            WCA_CLOAK = 17,
+            WCA_CLOAKED = 18,
+            WCA_ACCENT_POLICY = 19,
+            WCA_FREEZE_REPRESENTATION = 20,
+            WCA_EVER_UNCLOAKED = 21,
+            WCA_VISUAL_OWNER = 22,
+            WCA_LAST = 23
+        } WINDOWCOMPOSITIONATTRIB;
+        struct WINCOMPATTRDATA
+        {
+            WINDOWCOMPOSITIONATTRIB nAttribute;
+            PVOID pData;
+            ULONG ulDataSize;
+        };
+        typedef BOOL(WINAPI* pSetWindowCompositionAttribute)(HWND, WINCOMPATTRDATA*);
+        const pSetWindowCompositionAttribute SetWindowCompositionAttribute = (pSetWindowCompositionAttribute)GetProcAddress(hModule, "SetWindowCompositionAttribute");
+        if (SetWindowCompositionAttribute)
+        {
+            ACCENTPOLICY policy = { bEnabled ? ACCENT_ENABLE_ACRYLICBLURBEHIND : ACCENT_DISABLED, 0, 0x80000000, 0 };
+            //ACCENTPOLICY policy = { ACCENT_ENABLE_BLURBEHIND };
+            WINCOMPATTRDATA data = { WCA_ACCENT_POLICY, &policy, sizeof(ACCENTPOLICY) };
+            SetWindowCompositionAttribute(hWnd, &data);
+            //DwmSetWindowAttribute(hWnd, WCA_ACCENT_POLICY, &policy, sizeof(ACCENTPOLICY));
+        }
+        //FreeLibrary(hModule);
+    }
+}
+
 #define SM_FAVOURITE 1236
 #define SM_OPEN_IN_EXPLORER 1234
 #define SM_OPEN_UP 1235
@@ -337,6 +403,8 @@ int CMiniExplorerWnd::OnCreate(LPCREATESTRUCT lpCreateStruct)
     TRACE(__FUNCTIONW__ _T(" \n"));
     const MiniExplorerSettings* pSettings = static_cast<MiniExplorerSettings*>(lpCreateStruct->lpCreateParams);
 
+    SetWindowBlur(*this, true);
+
     CRect rc;
     GetClientRect(rc);
 
@@ -521,6 +589,16 @@ void CMiniExplorerWnd::OnSize(UINT nType, CSize size)
     if (m_hViewWnd)
         m_hViewWnd.SetWindowPos(NULL, rc.left, rc.top, rc.Width(), rc.Height(), SWP_NOZORDER);
 #endif
+}
+
+void CMiniExplorerWnd::OnEnterSizeMove()
+{
+    SetWindowBlur(*this, false);
+}
+
+void CMiniExplorerWnd::OnExitSizeMove()
+{
+    SetWindowBlur(*this, true);
 }
 
 void CMiniExplorerWnd::OnSetFocus(CWindow wndOld)

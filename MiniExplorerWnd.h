@@ -65,6 +65,8 @@ public:
         MSG_WM_CREATE(OnCreate)
         MSG_WM_DESTROY(OnDestroy)
         MSG_WM_SIZE(OnSize)
+        MSG_WM_ENTERSIZEMOVE(OnEnterSizeMove)
+        MSG_WM_EXITSIZEMOVE(OnExitSizeMove)
         MSG_WM_SETFOCUS(OnSetFocus)
         MSG_WM_DPICHANGED(OnDpiChanged)
         MSG_WM_SYSCOMMAND(OnSysCommand)
@@ -96,6 +98,8 @@ private:
     int OnCreate(LPCREATESTRUCT lpCreateStruct);
     void OnDestroy();
     void OnSize(UINT nType, CSize size);
+    void OnEnterSizeMove();
+    void OnExitSizeMove();
     void OnSetFocus(CWindow wndOld);
     void OnDpiChanged(UINT nDpiX, UINT nDpiY, PRECT pRect);
     void OnSysCommand(UINT nID, CPoint point);
